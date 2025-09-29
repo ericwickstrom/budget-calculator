@@ -126,6 +126,7 @@ const FinancialCalculator = () => {
   const [results, setResults] = useState([]);
   const [summary, setSummary] = useState(null);
   const [configError] = useState(null);
+  const [activeExpenseTab, setActiveExpenseTab] = useState('essential');
 
   const handleInputChange = (field, value) => {
     // Allow empty string to clear the field, otherwise parse as float
@@ -545,131 +546,184 @@ const FinancialCalculator = () => {
           />
         </div>
 
-        <div className="input-group">
+        <div className="input-group expense-settings">
           <h3>Expense Settings</h3>
-          {(() => {
-            try {
-              const expenseCategories = getExpenseCategories();
-              const expenseFields = getExpenseFields();
 
-              return Object.keys(expenseCategories || {}).map(categoryKey => {
-                const category = expenseCategories[categoryKey];
-                const fields = expenseFields[categoryKey] || [];
+          <div className="expense-tabs">
+            <button
+              className={`tab-button ${activeExpenseTab === 'essential' ? 'active' : ''}`}
+              onClick={() => setActiveExpenseTab('essential')}
+            >
+              Essential Expenses
+            </button>
+            <button
+              className={`tab-button ${activeExpenseTab === 'nonessential' ? 'active' : ''}`}
+              onClick={() => setActiveExpenseTab('nonessential')}
+            >
+              Non-Essential Expenses
+            </button>
+            <button
+              className={`tab-button ${activeExpenseTab === 'overview' ? 'active' : ''}`}
+              onClick={() => setActiveExpenseTab('overview')}
+            >
+              Overview
+            </button>
+          </div>
 
-                if (!category) {
-                  console.warn(`Category ${categoryKey} is undefined`);
-                  return null;
+          <div className="expense-tab-content">
+            {(() => {
+              try {
+                const expenseCategories = getExpenseCategories();
+                const expenseFields = getExpenseFields();
+
+                if (activeExpenseTab === 'overview') {
+                  return (
+                    <div className="expense-overview">
+                      <div className="overview-cards">
+                        <div className="overview-card essential">
+                          <h4>Essential Monthly</h4>
+                          <div className="amount">${formData.essentialMonthly.toFixed(0)}</div>
+                          <div className="subtitle">Must-have expenses</div>
+                        </div>
+                        <div className="overview-card nonessential">
+                          <h4>Non-Essential Monthly</h4>
+                          <div className="amount">${formData.nonEssentialMonthly.toFixed(0)}</div>
+                          <div className="subtitle">Lifestyle & discretionary</div>
+                        </div>
+                        <div className="overview-card total">
+                          <h4>Total Monthly</h4>
+                          <div className="amount">${(formData.essentialMonthly + formData.nonEssentialMonthly).toFixed(0)}</div>
+                          <div className="subtitle">All monthly expenses</div>
+                        </div>
+                      </div>
+                      <div className="expense-breakdown">
+                        <h4>Annual Breakdown</h4>
+                        <div className="breakdown-item">
+                          <span>Monthly Expenses × 12:</span>
+                          <span>${((formData.essentialMonthly + formData.nonEssentialMonthly) * 12).toFixed(0)}</span>
+                        </div>
+                        <div className="breakdown-item">
+                          <span>Annual Expenses:</span>
+                          <span>${(formData.totalAnnualExpenses || 0).toFixed(0)}</span>
+                        </div>
+                        <div className="breakdown-item total-line">
+                          <span><strong>Total Annual:</strong></span>
+                          <span><strong>${formData.currentExpenses.toFixed(0)}</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                  );
                 }
 
-                const frequency = category.frequency || 'monthly';
-                const title = category.title || categoryKey;
+                const filteredCategories = Object.keys(expenseCategories || {}).filter(categoryKey => {
+                  const category = expenseCategories[categoryKey];
+                  if (!category) return false;
+
+                  const isEssential = categoryKey.toLowerCase().includes('essential');
+                  return activeExpenseTab === 'essential' ? isEssential : !isEssential;
+                });
 
                 return (
-                  <div key={categoryKey}>
-                    <h4>{title}</h4>
-                    {fields.map(field => {
-                      if (!field || !field.key) {
-                        console.warn(`Invalid field in category ${categoryKey}:`, field);
+                  <div className="expense-cards">
+                    {filteredCategories.map(categoryKey => {
+                      const category = expenseCategories[categoryKey];
+                      const fields = expenseFields[categoryKey] || [];
+
+                      if (!category) {
+                        console.warn(`Category ${categoryKey} is undefined`);
                         return null;
                       }
 
+                      const frequency = category.frequency || 'monthly';
+                      const title = category.title || categoryKey;
+
+                      // Calculate category total
+                      const categoryTotal = fields.reduce((sum, field) => {
+                        return sum + (getNumericValue(formData[field.key]) || 0);
+                      }, 0);
+
                       return (
-                        <div key={field.key}>
-                          <label>{field.label || field.key} ({frequency === 'annual' ? 'Annual' : 'Monthly'} $):</label>
-                          <input
-                            type="number"
-                            value={formData[field.key] === '' ? '' : (formData[field.key] || 0)}
-                            onChange={(e) => handleInputChange(field.key, e.target.value)}
-                            onBlur={(e) => handleInputBlur(field.key, e.target.value)}
-                            min="0"
-                          />
+                        <div key={categoryKey} className="expense-card">
+                          <div className="card-header">
+                            <h4>{title}</h4>
+                            <div className="category-total">
+                              ${categoryTotal.toFixed(0)}
+                              <span className="frequency">/{frequency === 'annual' ? 'year' : 'month'}</span>
+                            </div>
+                          </div>
+                          <div className="card-fields">
+                            {fields.map(field => {
+                              if (!field || !field.key) {
+                                console.warn(`Invalid field in category ${categoryKey}:`, field);
+                                return null;
+                              }
+
+                              return (
+                                <div key={field.key} className="field-row">
+                                  <label>{field.label || field.key}:</label>
+                                  <div className="input-wrapper">
+                                    <span className="currency">$</span>
+                                    <input
+                                      type="number"
+                                      value={formData[field.key] === '' ? '' : (formData[field.key] || 0)}
+                                      onChange={(e) => handleInputChange(field.key, e.target.value)}
+                                      onBlur={(e) => handleInputBlur(field.key, e.target.value)}
+                                      min="0"
+                                      placeholder="0"
+                                    />
+                                    <span className="frequency-label">/{frequency === 'annual' ? 'yr' : 'mo'}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 );
-              }).filter(Boolean);
-            } catch (error) {
-              console.error('Error loading expense categories:', error);
-              // Fallback to minimal hardcoded structure
-              return (
-                <div>
-                  <h4>Essential Monthly Expenses</h4>
-                  <div>
-                    <label>Rent ($):</label>
-                    <input
-                      type="number"
-                      value={formData.rent || 0}
-                      onChange={(e) => handleInputChange('rent', e.target.value)}
-                      onBlur={(e) => handleInputBlur('rent', e.target.value)}
-                      min="0"
-                    />
+              } catch (error) {
+                console.error('Error loading expense categories:', error);
+                // Fallback to minimal hardcoded structure
+                return (
+                  <div className="expense-cards">
+                    <div className="expense-card">
+                      <div className="card-header">
+                        <h4>Essential Monthly Expenses</h4>
+                      </div>
+                      <div className="card-fields">
+                        <div className="field-row">
+                          <label>Rent:</label>
+                          <div className="input-wrapper">
+                            <span className="currency">$</span>
+                            <input
+                              type="number"
+                              value={formData.rent || 0}
+                              onChange={(e) => handleInputChange('rent', e.target.value)}
+                              onBlur={(e) => handleInputBlur('rent', e.target.value)}
+                              min="0"
+                            />
+                            <span className="frequency-label">/mo</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <h4>Non-Essential Monthly Expenses</h4>
-                  <div>
-                    <label>Miscellaneous ($):</label>
-                    <input
-                      type="number"
-                      value={formData.misc || 0}
-                      onChange={(e) => handleInputChange('misc', e.target.value)}
-                      onBlur={(e) => handleInputBlur('misc', e.target.value)}
-                      min="0"
-                    />
-                  </div>
-                </div>
-              );
-            }
-          })()}
+                );
+              }
+            })()}
+          </div>
 
-          <h4>Calculated Totals</h4>
-          <label>Essential Monthly Total ($):</label>
-          <input
-            type="number"
-            value={formData.essentialMonthly.toFixed(0)}
-            readOnly
-            className="readonly-input"
-          />
-
-          <label>Non-Essential Monthly Total ($):</label>
-          <input
-            type="number"
-            value={formData.nonEssentialMonthly.toFixed(0)}
-            readOnly
-            className="readonly-input"
-          />
-
-          <label>Total Monthly Expenses ($):</label>
-          <input
-            type="number"
-            value={(formData.totalMonthlyExpenses || 0).toFixed(0)}
-            readOnly
-            className="readonly-input"
-          />
-
-          <label>Total Annual Expenses ($):</label>
-          <input
-            type="number"
-            value={(formData.totalAnnualExpenses || 0).toFixed(0)}
-            readOnly
-            className="readonly-input"
-          />
-
-          <label>Combined Annual Expenses ($):</label>
-          <input
-            type="number"
-            value={formData.currentExpenses.toFixed(0)}
-            readOnly
-            className="readonly-input"
-          />
-
-          <label>Expense Inflation (%):</label>
-          <input
-            type="number"
-            value={formData.expenseInflation}
-            onChange={(e) => handleInputChange('expenseInflation', e.target.value)}
-            onBlur={(e) => handleInputBlur('expenseInflation', e.target.value)}
-            step="0.1" min="0" max="10"
-          />
+          <div className="expense-inflation-setting">
+            <label>Expense Inflation (%):</label>
+            <input
+              type="number"
+              value={formData.expenseInflation}
+              onChange={(e) => handleInputChange('expenseInflation', e.target.value)}
+              onBlur={(e) => handleInputBlur('expenseInflation', e.target.value)}
+              step="0.1" min="0" max="10"
+            />
+          </div>
         </div>
 
         <div className="input-group">
@@ -733,9 +787,6 @@ const FinancialCalculator = () => {
         </div>
       </div>
 
-      <button onClick={calculateProjection}>
-        Calculate Projection
-      </button>
 
       {summary && (
         <div className="summary">
