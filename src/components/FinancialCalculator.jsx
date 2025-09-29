@@ -1,74 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import './FinancialCalculator.css';
-import { getDefaultFormData, getPayScale, getGovernmentRates, getBusinessRules, getExpenseFields, getExpenseCategories, getConfigSource } from '../config/calculator-config.loader';
-
-const determineStep = (rrchHours) => {
-  const payScale = getPayScale();
-  const thresholds = payScale.stepThresholds;
-
-  for (let step = 1; step <= 13; step++) {
-    if (rrchHours <= thresholds[step.toString()]) {
-      return step;
-    }
-  }
-  return 13;
-};
-
-const calculateHourlyRate = (rrchHours, yearsFromBase) => {
-  const payScale = getPayScale();
-  const step = determineStep(rrchHours);
-  const baseRate = payScale.stepRates[step.toString()];
-  return baseRate * Math.pow(1 + payScale.annualRaiseRate, yearsFromBase);
-};
-
-const calculateACASubsidy = (afterTaxIncome) => {
-  const govRates = getGovernmentRates();
-  const aca = govRates.aca;
-
-  const benchmarkPremiumAnnual = aca.benchmarkPremiumMonthly * 12;
-  const incomePercentFPL = (afterTaxIncome / aca.federalPovertyLevel) * 100;
-
-  if (incomePercentFPL < aca.incomeThresholds.minimumPercent ||
-      incomePercentFPL > aca.incomeThresholds.maximumPercent) {
-    return 0;
-  }
-
-  let applicablePercentage;
-  if (incomePercentFPL <= 150) applicablePercentage = aca.subsidyRates['150'];
-  else if (incomePercentFPL <= 200) applicablePercentage = aca.subsidyRates['200'];
-  else if (incomePercentFPL <= 250) applicablePercentage = aca.subsidyRates['250'];
-  else if (incomePercentFPL <= 300) applicablePercentage = aca.subsidyRates['300'];
-  else {
-    const percentAbove300 = (incomePercentFPL - 300) / 100;
-    applicablePercentage = aca.subsidyRates['300'] - (percentAbove300 * 0.019);
-  }
-
-  const expectedContribution = afterTaxIncome * applicablePercentage;
-  return Math.max(0, benchmarkPremiumAnnual - expectedContribution);
-};
-
-const calculateUnemploymentBenefits = (currentYearW2, priorYearW2) => {
-  const govRates = getGovernmentRates();
-  const unemploymentRules = govRates.unemployment.utah2025;
-
-  const totalBasePeriodEarnings = currentYearW2 + priorYearW2;
-  const highestQuarterEarnings = Math.max(currentYearW2 / 4, priorYearW2 / 4);
-
-  if (totalBasePeriodEarnings < unemploymentRules.minimumEarnings ||
-      totalBasePeriodEarnings < (highestQuarterEarnings * unemploymentRules.quarterMultiplier)) {
-    return 0;
-  }
-
-  let weeklyBenefit = Math.round((highestQuarterEarnings / unemploymentRules.weeksPerQuarter) - unemploymentRules.weeklyBenefitDeduction);
-  weeklyBenefit = Math.min(weeklyBenefit, unemploymentRules.maxWeeklyBenefit);
-
-  if (weeklyBenefit <= 0) return 0;
-
-  let durationWeeks = Math.floor((totalBasePeriodEarnings * unemploymentRules.durationMultiplier) / weeklyBenefit);
-  durationWeeks = Math.max(unemploymentRules.minDurationWeeks, Math.min(unemploymentRules.maxDurationWeeks, durationWeeks));
-
-  return weeklyBenefit * durationWeeks;
-};
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { getDefaultFormData, getBusinessRules, getExpenseFields, getExpenseCategories, getConfigSource } from '../config/calculator-config.loader';
+import {
+  getNumericValue,
+  determineStep,
+  calculateHourlyRate,
+  calculateACASubsidy,
+  calculateUnemploymentBenefits,
+  calculatePTOPayout
+} from '../utils/calculations';
 
 const FinancialCalculator = () => {
   const [formData, setFormData] = useState(() => {
@@ -126,14 +65,14 @@ const FinancialCalculator = () => {
   const [results, setResults] = useState([]);
   const [summary, setSummary] = useState(null);
   const [configError] = useState(null);
-  const [activeExpenseTab, setActiveExpenseTab] = useState('essential');
+  const [activeExpenseTab, setActiveExpenseTab] = useState('monthly');
 
   const handleInputChange = (field, value) => {
-    // Allow empty string to clear the field, otherwise parse as float
-    const numericValue = value === '' ? '' : (parseFloat(value) || 0);
+    // Store the raw value to allow natural typing (including partial decimals)
+    // The getNumericValue helper will handle conversion for calculations
     setFormData(prev => ({
       ...prev,
-      [field]: numericValue
+      [field]: value
     }));
   };
 
@@ -150,30 +89,17 @@ const FinancialCalculator = () => {
     }
   };
 
-  // Helper function to safely get numeric value from formData
-  const getNumericValue = (fieldValue) => {
-    return fieldValue === '' ? 0 : (parseFloat(fieldValue) || 0);
-  };
-
-
   const updateCurrentHourlyRate = useCallback(() => {
     const rate = calculateHourlyRate(getNumericValue(formData.startingCareerHours), 0);
     setFormData(prev => ({ ...prev, currentHourlyRate: rate }));
   }, [formData.startingCareerHours]);
 
   const updatePTOPayout = useCallback(() => {
-    try {
-      const businessRules = getBusinessRules();
-      const ptoHours = Math.floor(getNumericValue(formData.annualHours) / businessRules.pto.hoursPerPTOHour);
-      const ptoPayout = ptoHours * getNumericValue(formData.currentHourlyRate);
-      setFormData(prev => ({ ...prev, ptoPayout }));
-    } catch (error) {
-      console.error('Error updating PTO payout:', error);
-      // Fallback calculation
-      const ptoHours = Math.floor(getNumericValue(formData.annualHours) / 30);
-      const ptoPayout = ptoHours * getNumericValue(formData.currentHourlyRate);
-      setFormData(prev => ({ ...prev, ptoPayout }));
-    }
+    const ptoPayout = calculatePTOPayout(
+      getNumericValue(formData.annualHours),
+      getNumericValue(formData.currentHourlyRate)
+    );
+    setFormData(prev => ({ ...prev, ptoPayout }));
   }, [formData.annualHours, formData.currentHourlyRate]);
 
   const updateAnnualExpenses = useCallback(() => {
@@ -265,9 +191,8 @@ const FinancialCalculator = () => {
       const hourlyRate = calculateHourlyRate(rrchHours, yearsWorked);
       const seasonalW2 = hourlyRate * getNumericValue(formData.annualHours);
 
+      const ptoPayout = calculatePTOPayout(getNumericValue(formData.annualHours), hourlyRate);
       const businessRules = getBusinessRules();
-      const ptoHours = Math.floor(getNumericValue(formData.annualHours) / businessRules.pto.hoursPerPTOHour);
-      const ptoPayout = ptoHours * hourlyRate;
 
       const unemploymentBenefits = calculateUnemploymentBenefits(seasonalW2, priorYearW2);
 
@@ -329,7 +254,7 @@ const FinancialCalculator = () => {
         step,
         hourlyRate: hourlyRate.toFixed(2),
         seasonalW2: seasonalW2.toFixed(0),
-        otherIncome: formData.otherIncome.toFixed(0),
+        otherIncome: getNumericValue(formData.otherIncome).toFixed(0),
         profitShare: profitShare.toFixed(0),
         ptoPayout: ptoPayout.toFixed(0),
         totalWorkIncome: totalWorkIncome.toFixed(0),
@@ -353,7 +278,13 @@ const FinancialCalculator = () => {
 
     setResults(results);
     generateSummary(results);
-  }, [formData]);
+  }, [
+    formData.currentAge, formData.endAge, formData.startingCareerHours, formData.annualHours,
+    formData.cashBalance, formData.taxableBalance, formData.retirementBalance,
+    formData.startingProfitSharing, formData.profitSharingPercent, formData.otherIncome,
+    formData.partnerIncome, formData.taxRate, formData.currentExpenses, formData.expenseInflation,
+    formData.investmentReturn, formData.cashReturn
+  ]);
 
   const generateSummary = (results) => {
     const firstYear = results[0];
@@ -388,34 +319,52 @@ const FinancialCalculator = () => {
     updatePTOPayout();
   }, [updatePTOPayout]);
 
-  // Create a memoized string of all expense values to detect changes
-  const expenseFieldsString = useMemo(() => {
-    try {
-      const expenseFields = getExpenseFields();
-      const allFields = Object.values(expenseFields).flat();
-      return allFields.map(field => `${field.key}:${formData[field.key] || 0}`).join(',');
-    } catch (error) {
-      console.warn('Error getting expense fields for dependency tracking:', error);
-      // Fallback to hardcoded fields including new annual ones
-      return `rent:${formData.rent || 0},pets:${formData.pets || 0},utilities:${formData.utilities || 0},misc:${formData.misc || 0},carTabs:${formData.carTabs || 0}`;
-    }
-  }, [formData]);
+  // Track expense changes using a ref to avoid dependency issues
+  const lastExpenseValues = useRef({});
 
   useEffect(() => {
-    updateAnnualExpenses();
-  }, [updateAnnualExpenses]);
+    // Get all expense field values
+    let expenseFields = {};
+    try {
+      const configFields = getExpenseFields();
+      Object.values(configFields).flat().forEach(field => {
+        expenseFields[field.key] = getNumericValue(formData[field.key]);
+      });
+    } catch (error) {
+      // Fallback to known fields
+      ['rent', 'pets', 'utilities', 'groceries', 'carInsurance', 'motoInsurance',
+       'gas', 'phone', 'carLoan', 'homeLoan', 'entertainment', 'diningOut',
+       'hobbies', 'shopping', 'travel', 'misc', 'miscNonEssential', 'subscriptions',
+       'carRegistration', 'homeInsurance', 'lifeInsurance', 'taxPreparation',
+       'vacations', 'gifts', 'homeImprovements'].forEach(field => {
+        expenseFields[field] = getNumericValue(formData[field]);
+      });
+    }
+
+    // Check if any expense field changed
+    const hasChanged = Object.keys(expenseFields).some(field =>
+      lastExpenseValues.current[field] !== expenseFields[field]
+    );
+
+    if (hasChanged) {
+      lastExpenseValues.current = expenseFields;
+      updateAnnualExpenses();
+    }
+  });
 
   useEffect(() => {
     calculateProjection();
   }, [calculateProjection]);
 
   return (
-    <div className="calculator-container">
-      <div className="container">
-        <h1>⚙️ Life Math 🔧</h1>
+    <div className="font-sans max-w-6xl mx-auto p-5 bg-gray-50 text-gray-800 min-h-screen">
+      <div className="bg-white rounded-lg p-8 shadow-lg">
+        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+          ⚙️ Life Math 🔧
+        </h1>
 
         {configError && (
-          <div className="warning">
+          <div className="bg-yellow-100 border border-yellow-300 rounded p-3 mb-4">
             <strong>Configuration Warning:</strong> {configError}. Using fallback values.
           </div>
         )}
@@ -425,13 +374,13 @@ const FinancialCalculator = () => {
             const configSource = getConfigSource();
             if (configSource === 'example') {
               return (
-                <div className="warning">
-                  <strong>ℹ️ Using Template Configuration:</strong> Copy <code>calculator-config.example.json</code> to <code>calculator-config.json</code> and customize your values.
+                <div className="bg-yellow-100 border border-yellow-300 rounded p-3 mb-4">
+                  <strong>ℹ️ Using Template Configuration:</strong> Copy <code className="bg-gray-200 px-1 rounded">calculator-config.example.json</code> to <code className="bg-gray-200 px-1 rounded">calculator-config.json</code> and customize your values.
                 </div>
               );
             } else if (configSource === 'minimal') {
               return (
-                <div className="warning">
+                <div className="bg-yellow-100 border border-yellow-300 rounded p-3 mb-4">
                   <strong>⚠️ Using Minimal Configuration:</strong> No config files found. All values set to zero. Please add a configuration file.
                 </div>
               );
@@ -442,135 +391,291 @@ const FinancialCalculator = () => {
           return null;
         })()}
 
-      <div className="inputs">
-        <div className="input-group">
-          <h3>Basic Information</h3>
-          <label>Current Age:</label>
-          <input
-            type="number"
-            value={formData.currentAge}
-            onChange={(e) => handleInputChange('currentAge', e.target.value)}
-            onBlur={(e) => handleInputBlur('currentAge', e.target.value)}
-            min="25" max="70"
-          />
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5 mb-8">
+        <div className="bg-gray-50 p-5 rounded-lg border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-700 border-b-2 border-blue-500 pb-2 mb-4">Basic Information</h3>
 
-          <label>End Age:</label>
-          <input
-            type="number"
-            value={formData.endAge}
-            onChange={(e) => handleInputChange('endAge', e.target.value)}
-            onBlur={(e) => handleInputBlur('endAge', e.target.value)}
-            min="45" max="75"
-          />
+          <div className="space-y-4">
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Current Age:</label>
+              <input
+                type="number"
+                value={formData.currentAge}
+                onChange={(e) => handleInputChange('currentAge', e.target.value)}
+                onKeyUp={(e) => handleInputChange('currentAge', e.target.value)}
+                onBlur={(e) => handleInputBlur('currentAge', e.target.value)}
+                min="25" max="70"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
 
-          <label>Initial Ready Reserve Credited Hours:</label>
-          <input
-            type="number"
-            value={formData.startingCareerHours}
-            onChange={(e) => handleInputChange('startingCareerHours', e.target.value)}
-            onBlur={(e) => handleInputBlur('startingCareerHours', e.target.value)}
-            min="0"
-          />
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">End Age:</label>
+              <input
+                type="number"
+                value={formData.endAge}
+                onChange={(e) => handleInputChange('endAge', e.target.value)}
+                onKeyUp={(e) => handleInputChange('endAge', e.target.value)}
+                onBlur={(e) => handleInputBlur('endAge', e.target.value)}
+                min="45" max="75"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
 
-          <label>Annual Work Hours:</label>
-          <input
-            type="number"
-            value={formData.annualHours}
-            onChange={(e) => handleInputChange('annualHours', e.target.value)}
-            onBlur={(e) => handleInputBlur('annualHours', e.target.value)}
-            min="100" max="2080"
-          />
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Initial Ready Reserve Credited Hours:</label>
+              <input
+                type="number"
+                value={formData.startingCareerHours}
+                onChange={(e) => handleInputChange('startingCareerHours', e.target.value)}
+                onKeyUp={(e) => handleInputChange('startingCareerHours', e.target.value)}
+                onBlur={(e) => handleInputBlur('startingCareerHours', e.target.value)}
+                min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
 
-          <label>Starting Profit Sharing ($):</label>
-          <input
-            type="number"
-            value={formData.startingProfitSharing}
-            onChange={(e) => handleInputChange('startingProfitSharing', e.target.value)}
-            onBlur={(e) => handleInputBlur('startingProfitSharing', e.target.value)}
-            min="0"
-          />
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Annual Work Hours:</label>
+              <input
+                type="number"
+                value={formData.annualHours}
+                onChange={(e) => handleInputChange('annualHours', e.target.value)}
+                onKeyUp={(e) => handleInputChange('annualHours', e.target.value)}
+                onBlur={(e) => handleInputBlur('annualHours', e.target.value)}
+                min="100" max="2080"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Starting Profit Sharing ($):</label>
+              <input
+                type="number"
+                value={formData.startingProfitSharing}
+                onChange={(e) => handleInputChange('startingProfitSharing', e.target.value)}
+                onKeyUp={(e) => handleInputChange('startingProfitSharing', e.target.value)}
+                onBlur={(e) => handleInputBlur('startingProfitSharing', e.target.value)}
+                min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Effective Tax Rate (%):</label>
+              <input
+                type="number"
+                value={formData.taxRate}
+                onChange={(e) => handleInputChange('taxRate', e.target.value)}
+                onKeyUp={(e) => handleInputChange('taxRate', e.target.value)}
+                onBlur={(e) => handleInputBlur('taxRate', e.target.value)}
+                step="1" min="10" max="40"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Expense Inflation (%):</label>
+              <input
+                type="number"
+                value={formData.expenseInflation}
+                onChange={(e) => handleInputChange('expenseInflation', e.target.value)}
+                onKeyUp={(e) => handleInputChange('expenseInflation', e.target.value)}
+                onBlur={(e) => handleInputBlur('expenseInflation', e.target.value)}
+                step="0.1" min="0" max="10"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="input-group">
-          <h3>Income Settings</h3>
-          <label>Current Hourly Rate ($):</label>
-          <input
-            type="number"
-            value={formData.currentHourlyRate.toFixed(2)}
-            readOnly
-            className="readonly-input"
-          />
+        <div className="bg-gray-50 p-5 rounded-lg border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-700 border-b-2 border-blue-500 pb-2 mb-4">Current Balances</h3>
 
-          <label>Annual Raise (%):</label>
-          <input
-            type="number"
-            value={formData.annualRaise}
-            onChange={(e) => handleInputChange('annualRaise', e.target.value)}
-            onBlur={(e) => handleInputBlur('annualRaise', e.target.value)}
-            step="0.1" min="0" max="15"
-          />
+          <div className="space-y-4">
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Retirement Accounts ($):</label>
+              <input
+                type="number"
+                value={formData.retirementBalance}
+                onChange={(e) => handleInputChange('retirementBalance', e.target.value)}
+                onKeyUp={(e) => handleInputChange('retirementBalance', e.target.value)}
+                onBlur={(e) => handleInputBlur('retirementBalance', e.target.value)}
+                min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
 
-          <label>Profit Sharing (% of W2):</label>
-          <input
-            type="number"
-            value={formData.profitSharingPercent}
-            onChange={(e) => handleInputChange('profitSharingPercent', e.target.value)}
-            onBlur={(e) => handleInputBlur('profitSharingPercent', e.target.value)}
-            step="1" min="0" max="25"
-          />
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Taxable Accounts ($):</label>
+              <input
+                type="number"
+                value={formData.taxableBalance}
+                onChange={(e) => handleInputChange('taxableBalance', e.target.value)}
+                onKeyUp={(e) => handleInputChange('taxableBalance', e.target.value)}
+                onBlur={(e) => handleInputBlur('taxableBalance', e.target.value)}
+                min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
 
-          <label>PTO Payout ($):</label>
-          <input
-            type="number"
-            value={formData.ptoPayout.toFixed(2)}
-            readOnly
-            className="readonly-input"
-          />
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Cash Balance ($):</label>
+              <input
+                type="number"
+                value={formData.cashBalance}
+                onChange={(e) => handleInputChange('cashBalance', e.target.value)}
+                onKeyUp={(e) => handleInputChange('cashBalance', e.target.value)}
+                onBlur={(e) => handleInputBlur('cashBalance', e.target.value)}
+                min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
 
-          <label>Other Annual Income ($):</label>
-          <input
-            type="number"
-            value={formData.otherIncome}
-            onChange={(e) => handleInputChange('otherIncome', e.target.value)}
-            onBlur={(e) => handleInputBlur('otherIncome', e.target.value)}
-            min="0"
-          />
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Investment Return (%):</label>
+              <input
+                type="number"
+                value={formData.investmentReturn}
+                onChange={(e) => handleInputChange('investmentReturn', e.target.value)}
+                onKeyUp={(e) => handleInputChange('investmentReturn', e.target.value)}
+                onBlur={(e) => handleInputBlur('investmentReturn', e.target.value)}
+                step="0.1" min="3" max="12"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
 
-          <label>Partner Monthly Income ($):</label>
-          <input
-            type="number"
-            value={formData.partnerIncome}
-            onChange={(e) => handleInputChange('partnerIncome', e.target.value)}
-            onBlur={(e) => handleInputBlur('partnerIncome', e.target.value)}
-            min="0"
-          />
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Cash Return (%):</label>
+              <input
+                type="number"
+                value={formData.cashReturn}
+                onChange={(e) => handleInputChange('cashReturn', e.target.value)}
+                onKeyUp={(e) => handleInputChange('cashReturn', e.target.value)}
+                onBlur={(e) => handleInputBlur('cashReturn', e.target.value)}
+                step="0.01" min="0" max="8"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
+          </div>
         </div>
 
-        <div className="input-group expense-settings">
-          <h3>Expense Settings</h3>
+        <div className="bg-gray-50 p-5 rounded-lg border border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-700 border-b-2 border-blue-500 pb-2 mb-4">Income Settings</h3>
 
-          <div className="expense-tabs">
+          <div className="space-y-4">
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Current Hourly Rate ($):</label>
+              <input
+                type="number"
+                value={formData.currentHourlyRate.toFixed(2)}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded bg-gray-100 cursor-not-allowed text-gray-700"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Annual Raise (%):</label>
+              <input
+                type="number"
+                value={formData.annualRaise}
+                onChange={(e) => handleInputChange('annualRaise', e.target.value)}
+                onKeyUp={(e) => handleInputChange('annualRaise', e.target.value)}
+                onBlur={(e) => handleInputBlur('annualRaise', e.target.value)}
+                step="0.1" min="0" max="15"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Profit Sharing (% of W2):</label>
+              <input
+                type="number"
+                value={formData.profitSharingPercent}
+                onChange={(e) => handleInputChange('profitSharingPercent', e.target.value)}
+                onKeyUp={(e) => handleInputChange('profitSharingPercent', e.target.value)}
+                onBlur={(e) => handleInputBlur('profitSharingPercent', e.target.value)}
+                step="1" min="0" max="25"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">PTO Payout ($):</label>
+              <input
+                type="number"
+                value={formData.ptoPayout.toFixed(2)}
+                readOnly
+                className="w-full px-3 py-2 border border-gray-300 rounded bg-gray-100 cursor-not-allowed text-gray-700"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Other Annual Income ($):</label>
+              <input
+                type="number"
+                value={formData.otherIncome}
+                onChange={(e) => handleInputChange('otherIncome', e.target.value)}
+                onKeyUp={(e) => handleInputChange('otherIncome', e.target.value)}
+                onBlur={(e) => handleInputBlur('otherIncome', e.target.value)}
+                min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-2 font-semibold text-gray-700">Partner Monthly Income ($):</label>
+              <input
+                type="number"
+                value={formData.partnerIncome}
+                onChange={(e) => handleInputChange('partnerIncome', e.target.value)}
+                onKeyUp={(e) => handleInputChange('partnerIncome', e.target.value)}
+                onBlur={(e) => handleInputBlur('partnerIncome', e.target.value)}
+                min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
+              />
+            </div>
+          </div>
+        </div>
+
+
+        <div className="bg-gray-50 p-5 rounded-lg border border-gray-200 min-h-96 col-span-full">
+          <h3 className="text-lg font-semibold text-gray-700 border-b-2 border-blue-500 pb-2 mb-4">Expense Settings</h3>
+
+          <div className="flex bg-gray-100 rounded-lg p-1 mb-5 shadow-sm overflow-hidden">
             <button
-              className={`tab-button ${activeExpenseTab === 'essential' ? 'active' : ''}`}
-              onClick={() => setActiveExpenseTab('essential')}
+              className={`flex-1 px-2 py-3 cursor-pointer font-semibold text-sm text-center whitespace-nowrap overflow-hidden text-ellipsis border-none rounded-md transition-all duration-300 ${
+                activeExpenseTab === 'monthly'
+                  ? 'text-white bg-blue-500 shadow-md'
+                  : 'text-gray-600 bg-transparent hover:text-blue-500 hover:bg-blue-50'
+              }`}
+              onClick={() => setActiveExpenseTab('monthly')}
             >
-              Essential Expenses
+              Monthly
             </button>
             <button
-              className={`tab-button ${activeExpenseTab === 'nonessential' ? 'active' : ''}`}
-              onClick={() => setActiveExpenseTab('nonessential')}
+              className={`flex-1 px-2 py-3 cursor-pointer font-semibold text-sm text-center whitespace-nowrap overflow-hidden text-ellipsis border-none rounded-md transition-all duration-300 ${
+                activeExpenseTab === 'annual'
+                  ? 'text-white bg-blue-500 shadow-md'
+                  : 'text-gray-600 bg-transparent hover:text-blue-500 hover:bg-blue-50'
+              }`}
+              onClick={() => setActiveExpenseTab('annual')}
             >
-              Non-Essential Expenses
+              Annual
             </button>
             <button
-              className={`tab-button ${activeExpenseTab === 'overview' ? 'active' : ''}`}
+              className={`flex-1 px-2 py-3 cursor-pointer font-semibold text-sm text-center whitespace-nowrap overflow-hidden text-ellipsis border-none rounded-md transition-all duration-300 ${
+                activeExpenseTab === 'overview'
+                  ? 'text-white bg-blue-500 shadow-md'
+                  : 'text-gray-600 bg-transparent hover:text-blue-500 hover:bg-blue-50'
+              }`}
               onClick={() => setActiveExpenseTab('overview')}
             >
               Overview
             </button>
           </div>
 
-          <div className="expense-tab-content">
+          <div className="min-h-72">
             {(() => {
               try {
                 const expenseCategories = getExpenseCategories();
@@ -578,37 +683,39 @@ const FinancialCalculator = () => {
 
                 if (activeExpenseTab === 'overview') {
                   return (
-                    <div className="expense-overview">
-                      <div className="overview-cards">
-                        <div className="overview-card essential">
-                          <h4>Essential Monthly</h4>
-                          <div className="amount">${formData.essentialMonthly.toFixed(0)}</div>
-                          <div className="subtitle">Must-have expenses</div>
+                    <div className="py-5">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                        <div className="bg-gradient-to-br from-blue-100 to-blue-200 border-2 border-blue-500 rounded-xl p-5 text-center transition-all duration-300">
+                          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Total Monthly</h4>
+                          <div className="text-3xl font-bold text-gray-900 mb-2">${(formData.totalMonthlyExpenses || 0).toFixed(0)}</div>
+                          <div className="text-xs text-gray-600">Monthly recurring expenses</div>
                         </div>
-                        <div className="overview-card nonessential">
-                          <h4>Non-Essential Monthly</h4>
-                          <div className="amount">${formData.nonEssentialMonthly.toFixed(0)}</div>
-                          <div className="subtitle">Lifestyle & discretionary</div>
+                        <div className="bg-gradient-to-br from-green-100 to-green-200 border-2 border-green-500 rounded-xl p-5 text-center transition-all duration-300">
+                          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Total Annual</h4>
+                          <div className="text-3xl font-bold text-gray-900 mb-2">${(formData.totalAnnualExpenses || 0).toFixed(0)}</div>
+                          <div className="text-xs text-gray-600">Annual one-time expenses</div>
                         </div>
-                        <div className="overview-card total">
-                          <h4>Total Monthly</h4>
-                          <div className="amount">${(formData.essentialMonthly + formData.nonEssentialMonthly).toFixed(0)}</div>
-                          <div className="subtitle">All monthly expenses</div>
+                        <div className="bg-gradient-to-br from-purple-100 to-purple-200 border-2 border-purple-500 rounded-xl p-5 text-center transition-all duration-300">
+                          <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Combined Total</h4>
+                          <div className="text-3xl font-bold text-gray-900 mb-2">${formData.currentExpenses.toFixed(0)}</div>
+                          <div className="text-xs text-gray-600">All expenses (annual)</div>
                         </div>
                       </div>
-                      <div className="expense-breakdown">
-                        <h4>Annual Breakdown</h4>
-                        <div className="breakdown-item">
-                          <span>Monthly Expenses × 12:</span>
-                          <span>${((formData.essentialMonthly + formData.nonEssentialMonthly) * 12).toFixed(0)}</span>
-                        </div>
-                        <div className="breakdown-item">
-                          <span>Annual Expenses:</span>
-                          <span>${(formData.totalAnnualExpenses || 0).toFixed(0)}</span>
-                        </div>
-                        <div className="breakdown-item total-line">
-                          <span><strong>Total Annual:</strong></span>
-                          <span><strong>${formData.currentExpenses.toFixed(0)}</strong></span>
+                      <div className="bg-gray-100 border border-gray-300 rounded-lg p-5">
+                        <h4 className="text-lg font-semibold text-gray-700 mb-4">Annual Breakdown</h4>
+                        <div className="space-y-3">
+                          <div className="flex justify-between py-2 border-b border-gray-300">
+                            <span>Monthly Expenses × 12:</span>
+                            <span className="font-semibold text-blue-600">${((formData.totalMonthlyExpenses || 0) * 12).toFixed(0)}</span>
+                          </div>
+                          <div className="flex justify-between py-2 border-b border-gray-300">
+                            <span>Annual Expenses:</span>
+                            <span className="font-semibold text-blue-600">${(formData.totalAnnualExpenses || 0).toFixed(0)}</span>
+                          </div>
+                          <div className="flex justify-between py-3 border-t-2 border-gray-700 mt-2 text-lg">
+                            <span className="font-bold">Combined Total (Annual):</span>
+                            <span className="font-bold text-blue-600">${formData.currentExpenses.toFixed(0)}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -619,12 +726,12 @@ const FinancialCalculator = () => {
                   const category = expenseCategories[categoryKey];
                   if (!category) return false;
 
-                  const isEssential = categoryKey.toLowerCase().includes('essential');
-                  return activeExpenseTab === 'essential' ? isEssential : !isEssential;
+                  const frequency = category.frequency || 'monthly';
+                  return activeExpenseTab === 'monthly' ? frequency === 'monthly' : frequency === 'annual';
                 });
 
                 return (
-                  <div className="expense-cards">
+                  <div className="flex flex-col gap-4 mb-5">
                     {filteredCategories.map(categoryKey => {
                       const category = expenseCategories[categoryKey];
                       const fields = expenseFields[categoryKey] || [];
@@ -643,39 +750,43 @@ const FinancialCalculator = () => {
                       }, 0);
 
                       return (
-                        <div key={categoryKey} className="expense-card">
-                          <div className="card-header">
-                            <h4>{title}</h4>
-                            <div className="category-total">
+                        <div key={categoryKey} className="bg-white border border-gray-300 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-300">
+                          <div className="bg-gray-50 px-4 py-3 border-b border-gray-300 flex justify-between items-center">
+                            <h4 className="text-base font-semibold text-gray-700">{title}</h4>
+                            <div className="text-lg font-bold text-blue-600">
                               ${categoryTotal.toFixed(0)}
-                              <span className="frequency">/{frequency === 'annual' ? 'year' : 'month'}</span>
+                              <span className="text-xs text-gray-600 font-normal">/{frequency === 'annual' ? 'year' : 'month'}</span>
                             </div>
                           </div>
-                          <div className="card-fields">
-                            {fields.map(field => {
-                              if (!field || !field.key) {
-                                console.warn(`Invalid field in category ${categoryKey}:`, field);
-                                return null;
-                              }
+                          <div className="p-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              {fields.map(field => {
+                                if (!field || !field.key) {
+                                  console.warn(`Invalid field in category ${categoryKey}:`, field);
+                                  return null;
+                                }
 
-                              return (
-                                <div key={field.key} className="field-row">
-                                  <label>{field.label || field.key}:</label>
-                                  <div className="input-wrapper">
-                                    <span className="currency">$</span>
-                                    <input
-                                      type="number"
-                                      value={formData[field.key] === '' ? '' : (formData[field.key] || 0)}
-                                      onChange={(e) => handleInputChange(field.key, e.target.value)}
-                                      onBlur={(e) => handleInputBlur(field.key, e.target.value)}
-                                      min="0"
-                                      placeholder="0"
-                                    />
-                                    <span className="frequency-label">/{frequency === 'annual' ? 'yr' : 'mo'}</span>
+                                return (
+                                  <div key={field.key}>
+                                    <label className="block mb-1 text-sm font-medium text-gray-700">{field.label || field.key}:</label>
+                                    <div className="flex items-center border border-gray-300 rounded overflow-hidden bg-white focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200">
+                                      <span className="bg-gray-100 px-3 py-2 text-gray-600 font-medium border-r border-gray-300 text-sm">$</span>
+                                      <input
+                                        type="number"
+                                        value={formData[field.key] === '' ? '' : (formData[field.key] || 0)}
+                                        onChange={(e) => handleInputChange(field.key, e.target.value)}
+                                        onKeyUp={(e) => handleInputChange(field.key, e.target.value)}
+                                        onBlur={(e) => handleInputBlur(field.key, e.target.value)}
+                                        min="0"
+                                        placeholder="0"
+                                        className="flex-1 px-3 py-2 text-sm bg-transparent border-none focus:outline-none"
+                                      />
+                                      <span className="bg-gray-100 px-3 py-2 text-gray-600 text-xs border-l border-gray-300 whitespace-nowrap">/{frequency === 'annual' ? 'yr' : 'mo'}</span>
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
                       );
@@ -686,24 +797,26 @@ const FinancialCalculator = () => {
                 console.error('Error loading expense categories:', error);
                 // Fallback to minimal hardcoded structure
                 return (
-                  <div className="expense-cards">
-                    <div className="expense-card">
-                      <div className="card-header">
-                        <h4>Essential Monthly Expenses</h4>
+                  <div className="flex flex-col gap-4 mb-5">
+                    <div className="bg-white border border-gray-300 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-300">
+                      <div className="bg-gray-50 px-4 py-3 border-b border-gray-300">
+                        <h4 className="text-base font-semibold text-gray-700">Essential Monthly Expenses</h4>
                       </div>
-                      <div className="card-fields">
-                        <div className="field-row">
-                          <label>Rent:</label>
-                          <div className="input-wrapper">
-                            <span className="currency">$</span>
+                      <div className="p-4">
+                        <div className="mb-3">
+                          <label className="block mb-1 text-sm font-medium text-gray-700">Rent:</label>
+                          <div className="flex items-center border border-gray-300 rounded overflow-hidden bg-white focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200">
+                            <span className="bg-gray-100 px-3 py-2 text-gray-600 font-medium border-r border-gray-300 text-sm">$</span>
                             <input
                               type="number"
                               value={formData.rent || 0}
                               onChange={(e) => handleInputChange('rent', e.target.value)}
+                              onKeyUp={(e) => handleInputChange('rent', e.target.value)}
                               onBlur={(e) => handleInputBlur('rent', e.target.value)}
                               min="0"
+                              className="flex-1 px-3 py-2 text-sm bg-transparent border-none focus:outline-none"
                             />
-                            <span className="frequency-label">/mo</span>
+                            <span className="bg-gray-100 px-3 py-2 text-gray-600 text-xs border-l border-gray-300 whitespace-nowrap">/mo</span>
                           </div>
                         </div>
                       </div>
@@ -714,152 +827,85 @@ const FinancialCalculator = () => {
             })()}
           </div>
 
-          <div className="expense-inflation-setting">
-            <label>Expense Inflation (%):</label>
-            <input
-              type="number"
-              value={formData.expenseInflation}
-              onChange={(e) => handleInputChange('expenseInflation', e.target.value)}
-              onBlur={(e) => handleInputBlur('expenseInflation', e.target.value)}
-              step="0.1" min="0" max="10"
-            />
-          </div>
         </div>
 
-        <div className="input-group">
-          <h3>Current Balances</h3>
-          <label>Retirement Accounts ($):</label>
-          <input
-            type="number"
-            value={formData.retirementBalance}
-            onChange={(e) => handleInputChange('retirementBalance', e.target.value)}
-            onBlur={(e) => handleInputBlur('retirementBalance', e.target.value)}
-            min="0"
-          />
-
-          <label>Taxable Accounts ($):</label>
-          <input
-            type="number"
-            value={formData.taxableBalance}
-            onChange={(e) => handleInputChange('taxableBalance', e.target.value)}
-            onBlur={(e) => handleInputBlur('taxableBalance', e.target.value)}
-            min="0"
-          />
-
-          <label>Cash Balance ($):</label>
-          <input
-            type="number"
-            value={formData.cashBalance}
-            onChange={(e) => handleInputChange('cashBalance', e.target.value)}
-            onBlur={(e) => handleInputBlur('cashBalance', e.target.value)}
-            min="0"
-          />
-
-          <label>Investment Return (%):</label>
-          <input
-            type="number"
-            value={formData.investmentReturn}
-            onChange={(e) => handleInputChange('investmentReturn', e.target.value)}
-            onBlur={(e) => handleInputBlur('investmentReturn', e.target.value)}
-            step="0.1" min="3" max="12"
-          />
-
-          <label>Cash Return (%):</label>
-          <input
-            type="number"
-            value={formData.cashReturn}
-            onChange={(e) => handleInputChange('cashReturn', e.target.value)}
-            onBlur={(e) => handleInputBlur('cashReturn', e.target.value)}
-            step="0.01" min="0" max="8"
-          />
-        </div>
-
-        <div className="input-group">
-          <h3>Tax Settings</h3>
-          <label>Effective Tax Rate (%):</label>
-          <input
-            type="number"
-            value={formData.taxRate}
-            onChange={(e) => handleInputChange('taxRate', e.target.value)}
-            onBlur={(e) => handleInputBlur('taxRate', e.target.value)}
-            step="1" min="10" max="40"
-          />
-        </div>
       </div>
 
 
       {summary && (
-        <div className="summary">
-          <h3>Summary</h3>
-          <div className="summary-grid">
-            <div>
-              <strong>Wage Growth:</strong><br />
-              ${summary.wageGrowth.start} → ${summary.wageGrowth.end}/hour<br />
-              {summary.wageGrowth.increase}% increase
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-5 my-5">
+          <h3 className="text-xl font-bold text-blue-900 mb-4">Summary</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <strong className="text-gray-700">Wage Growth:</strong><br />
+              <span className="text-lg">${summary.wageGrowth.start} → ${summary.wageGrowth.end}/hour</span><br />
+              <span className="text-green-600 font-semibold">{summary.wageGrowth.increase}% increase</span>
             </div>
-            <div>
-              <strong>Account Depletion:</strong><br />
-              Cash: Age {summary.accountDepletion.cash}<br />
-              Taxable: Age {summary.accountDepletion.taxable}
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <strong className="text-gray-700">Account Depletion:</strong><br />
+              <span>Cash: Age {summary.accountDepletion.cash}</span><br />
+              <span>Taxable: Age {summary.accountDepletion.taxable}</span>
             </div>
-            <div>
-              <strong>Final Net Worth:</strong><br />
-              ${summary.finalNetWorth}<br />
-              (Age {summary.finalAge})
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <strong className="text-gray-700">Final Net Worth:</strong><br />
+              <span className="text-lg font-semibold text-green-600">${summary.finalNetWorth}</span><br />
+              <span className="text-sm text-gray-600">(Age {summary.finalAge})</span>
             </div>
-            <div>
-              <strong>Final Annual Shortfall:</strong><br />
-              ${summary.finalShortfall.amount}<br />
-              {summary.finalShortfall.isNegative ? '(Needs additional income)' : '(Surplus)'}
+            <div className="bg-white p-4 rounded-lg shadow-sm">
+              <strong className="text-gray-700">Final Annual Shortfall:</strong><br />
+              <span className="text-lg font-semibold">${summary.finalShortfall.amount}</span><br />
+              <span className={`text-sm ${summary.finalShortfall.isNegative ? 'text-red-600' : 'text-green-600'}`}>
+                {summary.finalShortfall.isNegative ? '(Needs additional income)' : '(Surplus)'}
+              </span>
             </div>
           </div>
         </div>
       )}
 
       {results.length > 0 && (
-        <div className="results-table">
-          <table>
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr>
-                <th>Age</th>
-                <th>Work Income</th>
-                <th>Unemployment Benefits</th>
-                <th>After-Tax</th>
-                <th>ACA Tax Refund</th>
-                <th>Partner Income</th>
-                <th>Expenses</th>
-                <th>Shortfall</th>
-                <th>Cash</th>
-                <th>Taxable</th>
-                <th>Retirement</th>
-                <th>Net Worth</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Age</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Work Income</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Unemployment Benefits</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">After-Tax</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">ACA Tax Refund</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Partner Income</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Expenses</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Shortfall</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Cash</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Taxable</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Retirement</th>
+                <th className="border border-gray-300 px-3 py-2 bg-blue-500 text-white font-semibold text-center">Net Worth</th>
               </tr>
             </thead>
             <tbody>
               {results.map((row, index) => (
-                <tr key={index}>
-                  <td>{row.age}</td>
-                  <td className="work-income" title={`Hourly Rate: $${row.hourlyRate}, W2: $${parseInt(row.seasonalW2).toLocaleString()}, Profit Share: $${parseInt(row.profitShare).toLocaleString()}, PTO: $${parseInt(row.ptoPayout).toLocaleString()}`}>
+                <tr key={index} className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                  <td className="border border-gray-300 px-3 py-2 text-center">{row.age}</td>
+                  <td className="border border-gray-300 px-3 py-2 text-center cursor-help hover:bg-blue-50" title={`Hourly Rate: $${row.hourlyRate}, W2: $${parseInt(row.seasonalW2).toLocaleString()}, Profit Share: $${parseInt(row.profitShare).toLocaleString()}, PTO: $${parseInt(row.ptoPayout).toLocaleString()}`}>
                     ${parseInt(row.totalWorkIncome).toLocaleString()}
                   </td>
-                  <td>${parseInt(row.unemploymentBenefits).toLocaleString()}</td>
-                  <td>${parseInt(row.afterTaxIncome).toLocaleString()}</td>
-                  <td className="positive">${parseInt(row.acaTaxRefund).toLocaleString()}</td>
-                  <td>${parseInt(row.partnerIncome).toLocaleString()}</td>
-                  <td>${parseInt(row.annualExpenses).toLocaleString()}</td>
-                  <td className={parseFloat(row.shortfall) > 0 ? 'negative' : 'positive'}>
+                  <td className="border border-gray-300 px-3 py-2 text-center">${parseInt(row.unemploymentBenefits).toLocaleString()}</td>
+                  <td className="border border-gray-300 px-3 py-2 text-center">${parseInt(row.afterTaxIncome).toLocaleString()}</td>
+                  <td className="border border-gray-300 px-3 py-2 text-center text-green-600 font-bold">${parseInt(row.acaTaxRefund).toLocaleString()}</td>
+                  <td className="border border-gray-300 px-3 py-2 text-center">${parseInt(row.partnerIncome).toLocaleString()}</td>
+                  <td className="border border-gray-300 px-3 py-2 text-center">${parseInt(row.annualExpenses).toLocaleString()}</td>
+                  <td className={`border border-gray-300 px-3 py-2 text-center font-bold ${parseFloat(row.shortfall) > 0 ? 'text-red-600' : 'text-green-600'}`}>
                     ${parseInt(row.shortfall).toLocaleString()}
                   </td>
-                  <td className={parseFloat(row.cashBalance) <= 0 ? 'negative' : ''}>
+                  <td className={`border border-gray-300 px-3 py-2 text-center ${parseFloat(row.cashBalance) <= 0 ? 'text-red-600' : ''}`}>
                     ${parseInt(row.cashBalance).toLocaleString()}
                   </td>
-                  <td className={parseFloat(row.taxableBalance) <= 0 ? 'negative' : ''}>
+                  <td className={`border border-gray-300 px-3 py-2 text-center ${parseFloat(row.taxableBalance) <= 0 ? 'text-red-600' : ''}`}>
                     ${parseInt(row.taxableBalance).toLocaleString()}
                   </td>
-                  <td className="retirement-cell" title={`Annual 401k Contribution: $${parseInt(row.contribution401k).toLocaleString()} (3% of Profit Sharing)`}>
+                  <td className="border border-gray-300 px-3 py-2 text-center cursor-help hover:bg-blue-50" title={`Annual 401k Contribution: $${parseInt(row.contribution401k).toLocaleString()} (3% of Profit Sharing)`}>
                     ${parseInt(row.retirementBalance).toLocaleString()}
                   </td>
-                  <td className="positive">${parseInt(row.totalNetWorth).toLocaleString()}</td>
+                  <td className="border border-gray-300 px-3 py-2 text-center text-green-600 font-bold">${parseInt(row.totalNetWorth).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
