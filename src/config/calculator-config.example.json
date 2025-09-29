@@ -1,0 +1,174 @@
+{
+  "metadata": {
+    "version": "2025.1",
+    "lastUpdated": "2025-01-15",
+    "description": "Life Math Calculator Configuration - Example Template",
+    "dataYear": 2025
+  },
+  "defaultValues": {
+    "personalInfo": {
+      "currentAge": 44,
+      "endAge": 60,
+      "startingCareerHours": 9695,
+      "annualHours": 800
+    },
+    "income": {
+      "startingProfitSharing": 0,
+      "annualRaise": 4.0,
+      "profitSharingPercent": 10,
+      "otherIncome": 500,
+      "partnerIncome": 1500
+    },
+    "expenses": {
+      "categories": {
+        "essential": {
+          "title": "Essential Monthly Expenses",
+          "frequency": "monthly",
+          "fields": {
+            "rent": { "label": "Rent", "default": 1760 },
+            "pets": { "label": "Pets", "default": 300 },
+            "subscriptions": { "label": "Subscriptions", "default": 56 },
+            "carInsurance": { "label": "Car Insurance", "default": 135 },
+            "motoInsurance": { "label": "Moto Insurance", "default": 40 },
+            "groceries": { "label": "Groceries", "default": 860 },
+            "gas": { "label": "Gas", "default": 100 },
+            "phone": { "label": "Phone", "default": 100 },
+            "utilities": { "label": "Utilities", "default": 150 },
+            "carLoan": { "label": "Car Loan", "default": 550 },
+            "homeLoan": { "label": "Home Loan", "default": 364 }
+          }
+        },
+        "nonEssential": {
+          "title": "Non-Essential Monthly Expenses",
+          "frequency": "monthly",
+          "fields": {
+            "entertainment": { "label": "Entertainment", "default": 0 },
+            "diningOut": { "label": "Dining Out", "default": 0 },
+            "hobbies": { "label": "Hobbies", "default": 0 },
+            "shopping": { "label": "Shopping", "default": 0 },
+            "travel": { "label": "Travel", "default": 0 },
+            "misc": { "label": "Miscellaneous", "default": 0 }
+          }
+        },
+        "annualEssential": {
+          "title": "Essential Annual Expenses",
+          "frequency": "annual",
+          "fields": {
+            "carRegistration": { "label": "Car Registration", "default": 300 },
+            "homeInsurance": { "label": "Home Insurance", "default": 1200 },
+            "lifeInsurance": { "label": "Life Insurance", "default": 800 },
+            "taxPreparation": { "label": "Tax Preparation", "default": 400 }
+          }
+        },
+        "annualNonEssential": {
+          "title": "Non-Essential Annual Expenses",
+          "frequency": "annual",
+          "fields": {
+            "vacations": { "label": "Vacations", "default": 2000 },
+            "gifts": { "label": "Gifts & Holidays", "default": 1500 },
+            "homeImprovements": { "label": "Home Improvements", "default": 1000 }
+          }
+        }
+      },
+      "inflation": {
+        "expenseInflation": 3.0
+      }
+    },
+    "accounts": {
+      "retirementBalance": 560183,
+      "taxableBalance": 124112,
+      "cashBalance": 76000,
+      "investmentReturn": 6.0,
+      "cashReturn": 3.98
+    },
+    "taxes": {
+      "effectiveTaxRate": 22
+    }
+  },
+  "governmentRates": {
+    "aca": {
+      "federalPovertyLevel": 15060,
+      "benchmarkPremiumMonthly": 450,
+      "subsidyRates": {
+        "150": 0.0285,
+        "200": 0.0570,
+        "250": 0.0855,
+        "300": 0.1140,
+        "400": 0.095
+      },
+      "incomeThresholds": {
+        "minimumPercent": 100,
+        "maximumPercent": 400
+      }
+    },
+    "unemployment": {
+      "utah2025": {
+        "minimumEarnings": 5300,
+        "quarterMultiplier": 1.5,
+        "weeklyBenefitDeduction": 5,
+        "weeksPerQuarter": 26,
+        "maxWeeklyBenefit": 777,
+        "durationMultiplier": 0.27,
+        "minDurationWeeks": 10,
+        "maxDurationWeeks": 26
+      }
+    }
+  },
+  "payScale": {
+    "year": 2025,
+    "stepRates": {
+      "1": 19.76,
+      "2": 19.97,
+      "3": 20.18,
+      "4": 20.80,
+      "5": 21.63,
+      "6": 22.62,
+      "7": 23.62,
+      "8": 25.40,
+      "9": 27.45,
+      "10": 28.98,
+      "11": 30.73,
+      "12": 33.19,
+      "13": 38.50
+    },
+    "stepThresholds": {
+      "1": 699,
+      "2": 1399,
+      "3": 2099,
+      "4": 3499,
+      "5": 4899,
+      "6": 6299,
+      "7": 7699,
+      "8": 9099,
+      "9": 10499,
+      "10": 11899,
+      "11": 13299,
+      "12": 14699,
+      "13": 99999
+    },
+    "annualRaiseRate": 0.04
+  },
+  "businessRules": {
+    "pto": {
+      "hoursPerPTOHour": 30,
+      "description": "1 PTO hour earned per 30 hours worked"
+    },
+    "retirement": {
+      "contributionRate": 0.03,
+      "description": "3% of profit sharing goes to 401k"
+    },
+    "calculations": {
+      "maxCareerHours": 14700,
+      "displayOverflow": "----"
+    }
+  },
+  "validation": {
+    "ranges": {
+      "age": { "min": 25, "max": 75 },
+      "hours": { "min": 100, "max": 2080 },
+      "taxRate": { "min": 10, "max": 40 },
+      "investmentReturn": { "min": 3, "max": 12 },
+      "cashReturn": { "min": 0, "max": 8 }
+    }
+  }
+}

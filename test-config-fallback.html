@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Configuration Fallback Test</title>
+    <style>
+        body { font-family: system-ui; padding: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .main { background: #d4edda; border: 1px solid #c3e6cb; }
+        .example { background: #fff3cd; border: 1px solid #ffeaa7; }
+        .minimal { background: #f8d7da; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Configuration Fallback System Test</h1>
+
+    <h2>📋 Test Scenarios:</h2>
+
+    <div class="status main">
+        <h3>✅ Scenario 1: Main Config Available</h3>
+        <p><strong>File:</strong> <code>calculator-config.json</code></p>
+        <p><strong>Expected:</strong> Load custom configuration with user's personal values</p>
+        <p><strong>Status:</strong> This file is gitignored for privacy/customization</p>
+    </div>
+
+    <div class="status example">
+        <h3>⚠️ Scenario 2: Example Config Available (Current)</h3>
+        <p><strong>File:</strong> <code>calculator-config.example.json</code></p>
+        <p><strong>Expected:</strong> Load template configuration with example values</p>
+        <p><strong>Status:</strong> This file is in git and provides working defaults</p>
+    </div>
+
+    <div class="status minimal">
+        <h3>🆘 Scenario 3: No Config Files (Fail-safe)</h3>
+        <p><strong>File:</strong> <em>None available</em></p>
+        <p><strong>Expected:</strong> Load minimal configuration with zeros</p>
+        <p><strong>Status:</strong> Ultimate fallback - app still works but starts blank</p>
+    </div>
+
+    <h2>🎯 Configuration Hierarchy:</h2>
+    <ol>
+        <li><strong>calculator-config.json</strong> (Personal/Production) - Gitignored</li>
+        <li><strong>calculator-config.example.json</strong> (Template) - In git</li>
+        <li><strong>Minimal defaults</strong> (Zeros) - Hardcoded fallback</li>
+    </ol>
+
+    <h2>📁 Setup Instructions:</h2>
+    <pre>
+# For developers (first time setup):
+cp src/config/calculator-config.example.json src/config/calculator-config.json
+# Then customize your personal values in calculator-config.json
+
+# For production deployment:
+# Upload your custom calculator-config.json to the config directory
+# The app will automatically use it instead of the example
+    </pre>
+
+    <h2>🔍 Benefits:</h2>
+    <ul>
+        <li>✅ <strong>Privacy:</strong> Personal financial data not committed to git</li>
+        <li>✅ <strong>Flexibility:</strong> Easy environment-specific configurations</li>
+        <li>✅ <strong>Reliability:</strong> App works even with missing config files</li>
+        <li>✅ <strong>Maintainability:</strong> Example file shows structure for new users</li>
+        <li>✅ <strong>Version Control:</strong> Template in git, customizations separate</li>
+    </ul>
+
+    <p><strong>Current status: Using example configuration template ⚠️</strong></p>
+</body>
+</html>
