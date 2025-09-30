@@ -31,6 +31,12 @@ Located in `CactusCash.React/`:
 - Vitest for testing with jsdom environment
 - ESLint for linting
 
+**Structure:**
+- `src/components/` - React UI components
+- `src/config/` - Configuration loader and types
+- `src/utils/` - Calculation utilities and helper functions
+- `src/integration/` - Integration tests for user workflows
+
 ## Common Commands
 
 ### Backend (.NET)
@@ -103,10 +109,20 @@ npm run test:watch
 - **Environment**: jsdom
 - Setup file: `src/setupTests.js`
 - Coverage configured with v8 provider
+- Test suite includes 69+ tests: 38 unit tests, 29 component tests, 7 integration tests
 
 ## Project Structure Notes
 
+### Backend (.NET)
 - All C# projects use implicit usings and nullable reference types
 - The API includes Swagger/OpenAPI for API documentation
 - Test projects are properly marked with `IsTestProject` property
-- Frontend uses ES modules (`"type": "module"` in package.json)
+- Backend follows standard Clean Architecture folder structure:
+  - `Domain/Entities/`, `Domain/ValueObjects/`, `Domain/Enums/`, `Domain/Interfaces/`
+  - `Application/Services/`, `Application/DTOs/`, `Application/Validators/`, `Application/Mappings/`
+
+### Frontend (React)
+- Uses ES modules (`"type": "module"` in package.json)
+- Test configuration embedded in `vite.config.js`
+- Configuration file pattern: `calculator-config.example.json` for schema reference
+- Development server runs on port 5173 by default
