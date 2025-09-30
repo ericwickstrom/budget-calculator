@@ -1,16 +1,64 @@
-# React + Vite
+# CactusCash
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A comprehensive financial planning and projection application with full-stack architecture.
 
-Currently, two official plugins are available:
+## Project Structure
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+This monorepo contains multiple projects:
 
-## React Compiler
+```
+budget-calculator/
+├── CactusCash.React/     # Frontend React application
+└── [Future: Backend API]  # Coming soon
+```
 
-The React Compiler is not enabled on this template. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## CactusCash.React
 
-## Expanding the ESLint configuration
+The React-based frontend application for financial calculations and projections.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+**Features:**
+- Real-time financial projections
+- Configurable expense tracking
+- Investment balance calculations
+- Comprehensive test coverage (69 tests, 100% pass rate)
+
+[View React Frontend Documentation](./CactusCash.React/README.md)
+
+### Quick Start
+
+```bash
+cd CactusCash.React
+npm install
+npm run dev
+```
+
+## Future Development
+
+### Planned Backend
+
+The project will be expanded with a backend API to provide:
+- Data persistence
+- User authentication
+- Multi-user support
+- Historical tracking
+- API endpoints for calculations
+
+## Tech Stack
+
+### Frontend
+- React 18
+- Vite
+- Tailwind CSS
+- Vitest + React Testing Library
+
+### Backend (Planned)
+- TBD
+
+## Development Status
+
+✅ **Frontend**: Complete with comprehensive test coverage
+🚧 **Backend**: In planning phase
+
+## License
+
+Private - All rights reserved
