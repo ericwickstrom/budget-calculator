@@ -26,16 +26,37 @@ All projects target .NET 8.0 with nullable reference types enabled.
 ### Frontend (React)
 
 Located in `CactusCash.React/`:
-- React 19 with Vite as build tool
-- Tailwind CSS for styling
-- Vitest for testing with jsdom environment
-- ESLint for linting
 
-**Structure:**
+**Tech Stack:**
+- React 19.1 with Vite 7.1 as build tool
+- Tailwind CSS 3.4 for styling with PostCSS and Autoprefixer
+- Vitest 3.2 for testing with jsdom environment
+- React Testing Library 16.3 for component testing
+- ESLint 9.36 with React-specific plugins
+
+**Project Structure:**
 - `src/components/` - React UI components
-- `src/config/` - Configuration loader and types
-- `src/utils/` - Calculation utilities and helper functions
-- `src/integration/` - Integration tests for user workflows
+  - `Dashboard.jsx` - Main application logic and state management container
+  - `FinancialCalculator.jsx` - Presentation component for calculator UI
+  - `Navbar.jsx` - Navigation bar with routing to dashboard and auth links
+  - `Hero.jsx` - Landing page hero section with features
+- `src/config/` - Configuration system
+  - `calculator-config.loader.ts` - Dynamic config loader with fallbacks
+  - `calculator-config.types.ts` - TypeScript type definitions
+  - `calculator-config.json` - Runtime configuration file
+  - `calculator-config.example.json` - Schema reference and example
+- `src/utils/` - Pure calculation functions and helpers
+  - `calculations.js` - Financial calculation utilities
+- `src/integration/` - Integration tests for complete user workflows
+- `src/App.jsx` - Root component with view state management (landing vs dashboard)
+- `src/main.jsx` - Application entry point
+- `src/setupTests.js` - Vitest setup with Testing Library
+
+**Key Features:**
+- Single-page application with client-side view switching
+- Configurable business rules and default values via JSON
+- Comprehensive test coverage (69+ tests: 38 unit, 29 component, 7 integration)
+- Responsive design with mobile-first approach
 
 ## Common Commands
 
