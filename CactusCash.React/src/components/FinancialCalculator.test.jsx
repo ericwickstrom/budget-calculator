@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import FinancialCalculator from './FinancialCalculator';
+import Dashboard from './Dashboard';
 import * as configLoader from '../config/calculator-config.loader';
 
 // Mock the config loader
@@ -35,7 +35,7 @@ vi.mock('../utils/calculations', () => ({
   })
 }));
 
-describe('FinancialCalculator Component', () => {
+describe('Dashboard Component', () => {
   beforeEach(() => {
     // Setup default mocks
     vi.mocked(configLoader.getDefaultFormData).mockReturnValue({
@@ -108,12 +108,12 @@ describe('FinancialCalculator Component', () => {
 
   describe('Rendering & Structure', () => {
     it('should render without crashing', () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
       expect(screen.getByText(/Life Math/i)).toBeInTheDocument();
     });
 
     it('should display all main sections', () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       expect(screen.getByText(/Basic Information/i)).toBeInTheDocument();
       expect(screen.getByText(/Current Balances/i)).toBeInTheDocument();
@@ -122,7 +122,7 @@ describe('FinancialCalculator Component', () => {
     });
 
     it('should display expense tabs', () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       expect(screen.getByRole('button', { name: /Monthly/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Annual/i })).toBeInTheDocument();
@@ -130,7 +130,7 @@ describe('FinancialCalculator Component', () => {
     });
 
     it('should render results table', () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       // Check that table exists
       const table = screen.getByRole('table');
@@ -144,7 +144,7 @@ describe('FinancialCalculator Component', () => {
     });
 
     it('should show configuration warning when using example config', () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       expect(screen.getByText(/Using Template Configuration/i)).toBeInTheDocument();
     });
@@ -153,7 +153,7 @@ describe('FinancialCalculator Component', () => {
   describe('Input Validation & Handling', () => {
     it('should accept numeric input in age field', async () => {
       const user = userEvent.setup();
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       // Find input by placeholder or by querying all number inputs
       const inputs = screen.getAllByRole('spinbutton');
@@ -167,7 +167,7 @@ describe('FinancialCalculator Component', () => {
 
     it('should handle decimal values in investment return field', async () => {
       const user = userEvent.setup();
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       const inputs = screen.getAllByRole('spinbutton');
       const returnInput = inputs.find(input => input.value === '6'); // Investment return default
@@ -179,7 +179,7 @@ describe('FinancialCalculator Component', () => {
     });
 
     it('should set empty field to 0 on blur', async () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       // Find other income input by value
       let inputs = screen.getAllByRole('spinbutton');
@@ -198,7 +198,7 @@ describe('FinancialCalculator Component', () => {
     });
 
     it('should not allow editing read-only fields', () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       // Read-only inputs don't have spinbutton role, query differently
       const readonlyInputs = screen.getAllByDisplayValue('27.45'); // Hourly rate
@@ -209,7 +209,7 @@ describe('FinancialCalculator Component', () => {
 
   describe('Real-time Calculations', () => {
     it('should trigger calculation on keyup', async () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       const inputs = screen.getAllByRole('spinbutton');
       const ageInput = inputs.find(input => input.value === '44');
@@ -225,7 +225,7 @@ describe('FinancialCalculator Component', () => {
     });
 
     it('should update expense totals when individual expense changes', async () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       // Verify expense section renders by checking the heading
       const expenseSection = screen.getByText(/Expense Settings/i);
@@ -240,7 +240,7 @@ describe('FinancialCalculator Component', () => {
   describe('Expense Tab Navigation', () => {
     it('should switch to Annual tab when clicked', async () => {
       const user = userEvent.setup();
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       const annualTab = screen.getByRole('button', { name: /Annual/i });
       await user.click(annualTab);
@@ -250,7 +250,7 @@ describe('FinancialCalculator Component', () => {
     });
 
     it('should switch to Overview tab when clicked', async () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       const overviewTab = screen.getByRole('button', { name: /Overview/i });
       fireEvent.click(overviewTab);
@@ -263,7 +263,7 @@ describe('FinancialCalculator Component', () => {
 
     it('should not crash when switching tabs rapidly', async () => {
       const user = userEvent.setup();
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       const monthlyTab = screen.getByRole('button', { name: /Monthly/i });
       const annualTab = screen.getByRole('button', { name: /Annual/i });
@@ -286,7 +286,7 @@ describe('FinancialCalculator Component', () => {
       });
 
       // Should use fallback values and not crash
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
       expect(screen.getByText(/Life Math/i)).toBeInTheDocument();
     });
 
@@ -319,7 +319,7 @@ describe('FinancialCalculator Component', () => {
         taxRate: 0
       });
 
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
       expect(screen.getByText(/Life Math/i)).toBeInTheDocument();
     });
 
@@ -327,14 +327,14 @@ describe('FinancialCalculator Component', () => {
       vi.mocked(configLoader.getExpenseCategories).mockReturnValue({});
       vi.mocked(configLoader.getExpenseFields).mockReturnValue({});
 
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
       expect(screen.getByText(/Expense Settings/i)).toBeInTheDocument();
     });
   });
 
   describe('Projection Table Display', () => {
     it('should display projection table with data', () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       // Check that table has content
       const table = screen.getByRole('table');
@@ -346,7 +346,7 @@ describe('FinancialCalculator Component', () => {
     });
 
     it('should show summary section when results exist', () => {
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       // Summary should appear
       waitFor(() => {
@@ -360,7 +360,7 @@ describe('FinancialCalculator Component', () => {
   describe('User Interactions', () => {
     it('should allow typing in multiple fields sequentially', async () => {
       const user = userEvent.setup();
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       const inputs = screen.getAllByRole('spinbutton');
       const ageInput = inputs.find(input => input.value === '44');
@@ -378,7 +378,7 @@ describe('FinancialCalculator Component', () => {
 
     it('should maintain state across multiple input changes', async () => {
       const user = userEvent.setup();
-      render(<FinancialCalculator />);
+      render(<Dashboard />);
 
       const inputs = screen.getAllByRole('spinbutton');
       const taxRateInput = inputs.find(input => input.value === '22');

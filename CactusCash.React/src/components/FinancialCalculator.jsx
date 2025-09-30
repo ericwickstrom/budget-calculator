@@ -1,368 +1,19 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { getDefaultFormData, getBusinessRules, getExpenseFields, getExpenseCategories, getConfigSource } from '../config/calculator-config.loader';
-import {
-  getNumericValue,
-  determineStep,
-  calculateHourlyRate,
-  calculateACASubsidy,
-  calculateUnemploymentBenefits,
-  calculatePTOPayout
-} from '../utils/calculations';
+import { getExpenseCategories, getExpenseFields, getConfigSource } from '../config/calculator-config.loader';
+import { getNumericValue } from '../utils/calculations';
 
-const FinancialCalculator = () => {
-  const [formData, setFormData] = useState(() => {
-    try {
-      console.log('🔧 Initializing FinancialCalculator with default form data...');
-      const defaultData = getDefaultFormData();
-      console.log('✅ Default form data loaded:', defaultData);
-      return defaultData;
-    } catch (error) {
-      console.error('❌ Failed to load calculator configuration:', error);
-      // Fallback to hardcoded defaults if config fails
-      return {
-        currentAge: 44,
-        endAge: 60,
-        startingCareerHours: 9695,
-        annualHours: 800,
-        startingProfitSharing: 0,
-        currentHourlyRate: 27.45,
-        annualRaise: 4,
-        profitSharingPercent: 10,
-        ptoPayout: 0,
-        otherIncome: 500,
-        partnerIncome: 1500,
-        rent: 1760,
-        pets: 300,
-        subscriptions: 56,
-        carInsurance: 135,
-        motoInsurance: 40,
-        groceries: 860,
-        gas: 100,
-        phone: 100,
-        utilities: 150,
-        carLoan: 550,
-        homeLoan: 364,
-        entertainment: 0,
-        diningOut: 0,
-        hobbies: 0,
-        shopping: 0,
-        travel: 0,
-        miscNonEssential: 0,
-        essentialMonthly: 4415,
-        nonEssentialMonthly: 0,
-        currentExpenses: 52980,
-        expenseInflation: 3,
-        retirementBalance: 560183,
-        taxableBalance: 124112,
-        cashBalance: 76000,
-        investmentReturn: 6,
-        cashReturn: 3.98,
-        taxRate: 22
-      };
-    }
-  });
-
-  const [results, setResults] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [configError] = useState(null);
-  const [activeExpenseTab, setActiveExpenseTab] = useState('monthly');
-
-  const handleInputChange = (field, value) => {
-    // Store the raw value to allow natural typing (including partial decimals)
-    // The getNumericValue helper will handle conversion for calculations
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleInputBlur = (field, value) => {
-    // When user navigates away from empty field, set it to 0
-    // Also handle cases where input might be just whitespace
-    const trimmedValue = typeof value === 'string' ? value.trim() : value;
-    if (trimmedValue === '' || trimmedValue === null || trimmedValue === undefined || isNaN(Number(trimmedValue))) {
-      console.log(`Setting ${field} to 0 (was: "${value}")`);
-      setFormData(prev => ({
-        ...prev,
-        [field]: 0
-      }));
-    }
-  };
-
-  const updateCurrentHourlyRate = useCallback(() => {
-    const rate = calculateHourlyRate(getNumericValue(formData.startingCareerHours), 0);
-    setFormData(prev => ({ ...prev, currentHourlyRate: rate }));
-  }, [formData.startingCareerHours]);
-
-  const updatePTOPayout = useCallback(() => {
-    const ptoPayout = calculatePTOPayout(
-      getNumericValue(formData.annualHours),
-      getNumericValue(formData.currentHourlyRate)
-    );
-    setFormData(prev => ({ ...prev, ptoPayout }));
-  }, [formData.annualHours, formData.currentHourlyRate]);
-
-  const updateAnnualExpenses = useCallback(() => {
-    try {
-      const expenseCategories = getExpenseCategories();
-      const expenseFields = getExpenseFields();
-
-      let totalMonthlyExpenses = 0;
-      let totalAnnualExpenses = 0;
-      let essentialMonthly = 0;
-      let nonEssentialMonthly = 0;
-      let essentialAnnual = 0;
-      let nonEssentialAnnual = 0;
-
-      // Calculate totals by category, considering frequency
-      Object.keys(expenseCategories || {}).forEach(categoryKey => {
-        const category = expenseCategories[categoryKey];
-        if (!category) return;
-
-        const fields = expenseFields[categoryKey] || [];
-
-        let categoryTotal = fields.reduce((sum, field) => {
-          return sum + getNumericValue(formData[field.key]);
-        }, 0);
-
-        const frequency = category.frequency || 'monthly'; // Default to monthly if not specified
-
-        if (frequency === 'monthly') {
-          totalMonthlyExpenses += categoryTotal;
-          // Categorize as essential or non-essential based on category name
-          if (categoryKey.toLowerCase().includes('essential')) {
-            essentialMonthly += categoryTotal;
-          } else {
-            nonEssentialMonthly += categoryTotal;
-          }
-        } else if (frequency === 'annual') {
-          totalAnnualExpenses += categoryTotal;
-          // Categorize as essential or non-essential based on category name
-          if (categoryKey.toLowerCase().includes('essential')) {
-            essentialAnnual += categoryTotal;
-          } else {
-            nonEssentialAnnual += categoryTotal;
-          }
-        }
-      });
-
-      // Convert annual to monthly for consistent display
-      const annualToMonthly = totalAnnualExpenses / 12;
-      const currentExpenses = (totalMonthlyExpenses + annualToMonthly) * 12;
-
-      setFormData(prev => ({
-        ...prev,
-        essentialMonthly: essentialMonthly + (essentialAnnual / 12),
-        nonEssentialMonthly: nonEssentialMonthly + (nonEssentialAnnual / 12),
-        currentExpenses,
-        totalAnnualExpenses, // Add this for reference
-        totalMonthlyExpenses  // Add this for reference
-      }));
-    } catch (error) {
-      console.error('Error calculating expenses dynamically, using fallback:', error);
-      // Fallback to minimal calculation
-      const essentialTotal = getNumericValue(formData.rent) + getNumericValue(formData.utilities) + getNumericValue(formData.groceries);
-      const nonEssentialTotal = getNumericValue(formData.misc);
-      const currentExpenses = (essentialTotal + nonEssentialTotal) * 12;
-
-      setFormData(prev => ({
-        ...prev,
-        essentialMonthly: essentialTotal,
-        nonEssentialMonthly: nonEssentialTotal,
-        currentExpenses
-      }));
-    }
-  }, [formData]);
-
-  const calculateProjection = useCallback(() => {
-    const results = [];
-    let currentCash = getNumericValue(formData.cashBalance);
-    let currentTaxable = getNumericValue(formData.taxableBalance);
-    let currentRetirement = getNumericValue(formData.retirementBalance);
-    let cashDepleted = false;
-    let taxableDepleted = false;
-    let priorYearW2 = 0;
-    let priorYearIncome = 0;
-
-    for (let age = getNumericValue(formData.currentAge); age <= getNumericValue(formData.endAge); age++) {
-      const yearsWorked = age - getNumericValue(formData.currentAge);
-      const rrchHours = getNumericValue(formData.startingCareerHours) + (yearsWorked * getNumericValue(formData.annualHours));
-      const step = determineStep(rrchHours);
-      const hourlyRate = calculateHourlyRate(rrchHours, yearsWorked);
-      const seasonalW2 = hourlyRate * getNumericValue(formData.annualHours);
-
-      const ptoPayout = calculatePTOPayout(getNumericValue(formData.annualHours), hourlyRate);
-      const businessRules = getBusinessRules();
-
-      const unemploymentBenefits = calculateUnemploymentBenefits(seasonalW2, priorYearW2);
-
-      let profitShare = 0;
-      if (age === getNumericValue(formData.currentAge)) {
-        profitShare = getNumericValue(formData.startingProfitSharing);
-      } else {
-        profitShare = priorYearW2 * (getNumericValue(formData.profitSharingPercent) / 100);
-      }
-
-      const contribution401k = profitShare * businessRules.retirement.contributionRate;
-      const totalWorkIncome = seasonalW2 + profitShare + ptoPayout;
-      const totalGrossIncome = totalWorkIncome + getNumericValue(formData.otherIncome) + unemploymentBenefits;
-      const afterTaxIncome = totalGrossIncome * (1 - getNumericValue(formData.taxRate) / 100);
-
-      let acaTaxRefund = 0;
-      if (age > getNumericValue(formData.currentAge)) {
-        acaTaxRefund = calculateACASubsidy(priorYearIncome);
-      }
-
-      const partnerAnnualIncome = formData.partnerIncome * 12;
-      const totalHouseholdIncome = afterTaxIncome + partnerAnnualIncome + acaTaxRefund;
-      const annualExpenses = formData.currentExpenses * Math.pow(1 + formData.expenseInflation/100, yearsWorked);
-      const shortfall = annualExpenses - totalHouseholdIncome;
-
-      if (!cashDepleted) {
-        currentCash = currentCash * (1 + formData.cashReturn/100);
-        if (shortfall > 0) {
-          if (currentCash >= shortfall) {
-            currentCash -= shortfall;
-          } else {
-            currentCash = 0;
-            cashDepleted = true;
-          }
-        } else {
-          currentCash += Math.abs(shortfall);
-        }
-      }
-
-      if (cashDepleted && !taxableDepleted) {
-        currentTaxable = currentTaxable * (1 + formData.investmentReturn/100);
-        if (shortfall > 0) {
-          if (currentTaxable >= shortfall) {
-            currentTaxable -= shortfall;
-          } else {
-            currentTaxable = 0;
-            taxableDepleted = true;
-          }
-        }
-      } else if (!cashDepleted) {
-        currentTaxable = currentTaxable * (1 + formData.investmentReturn/100);
-      }
-
-      currentRetirement = currentRetirement * (1 + formData.investmentReturn/100) + contribution401k;
-
-      results.push({
-        age,
-        rrchHours: rrchHours > businessRules.calculations.maxCareerHours ? businessRules.calculations.displayOverflow : rrchHours.toLocaleString(),
-        step,
-        hourlyRate: hourlyRate.toFixed(2),
-        seasonalW2: seasonalW2.toFixed(0),
-        otherIncome: getNumericValue(formData.otherIncome).toFixed(0),
-        profitShare: profitShare.toFixed(0),
-        ptoPayout: ptoPayout.toFixed(0),
-        totalWorkIncome: totalWorkIncome.toFixed(0),
-        unemploymentBenefits: unemploymentBenefits.toFixed(0),
-        contribution401k: contribution401k.toFixed(0),
-        totalIncome: totalGrossIncome.toFixed(0),
-        afterTaxIncome: afterTaxIncome.toFixed(0),
-        acaTaxRefund: acaTaxRefund.toFixed(0),
-        partnerIncome: partnerAnnualIncome.toFixed(0),
-        annualExpenses: annualExpenses.toFixed(0),
-        shortfall: shortfall.toFixed(0),
-        cashBalance: currentCash.toFixed(0),
-        taxableBalance: currentTaxable.toFixed(0),
-        retirementBalance: currentRetirement.toFixed(0),
-        totalNetWorth: (currentCash + currentTaxable + currentRetirement).toFixed(0)
-      });
-
-      priorYearW2 = seasonalW2;
-      priorYearIncome = afterTaxIncome;
-    }
-
-    setResults(results);
-    generateSummary(results);
-  }, [
-    formData.currentAge, formData.endAge, formData.startingCareerHours, formData.annualHours,
-    formData.cashBalance, formData.taxableBalance, formData.retirementBalance,
-    formData.startingProfitSharing, formData.profitSharingPercent, formData.otherIncome,
-    formData.partnerIncome, formData.taxRate, formData.currentExpenses, formData.expenseInflation,
-    formData.investmentReturn, formData.cashReturn
-  ]);
-
-  const generateSummary = (results) => {
-    const firstYear = results[0];
-    const lastYear = results[results.length - 1];
-    const cashDepletedAge = results.find(r => parseFloat(r.cashBalance) <= 0)?.age || 'Never';
-    const taxableDepletedAge = results.find(r => parseFloat(r.taxableBalance) <= 0)?.age || 'Never';
-
-    setSummary({
-      wageGrowth: {
-        start: firstYear.hourlyRate,
-        end: lastYear.hourlyRate,
-        increase: ((parseFloat(lastYear.hourlyRate) / parseFloat(firstYear.hourlyRate) - 1) * 100).toFixed(1)
-      },
-      accountDepletion: {
-        cash: cashDepletedAge,
-        taxable: taxableDepletedAge
-      },
-      finalNetWorth: parseInt(lastYear.totalNetWorth).toLocaleString(),
-      finalAge: lastYear.age,
-      finalShortfall: {
-        amount: parseInt(lastYear.shortfall).toLocaleString(),
-        isNegative: parseFloat(lastYear.shortfall) > 0
-      }
-    });
-  };
-
-  useEffect(() => {
-    updateCurrentHourlyRate();
-  }, [updateCurrentHourlyRate]);
-
-  useEffect(() => {
-    updatePTOPayout();
-  }, [updatePTOPayout]);
-
-  // Track expense changes using a ref to avoid dependency issues
-  const lastExpenseValues = useRef({});
-
-  useEffect(() => {
-    // Get all expense field values
-    let expenseFields = {};
-    try {
-      const configFields = getExpenseFields();
-      Object.values(configFields).flat().forEach(field => {
-        expenseFields[field.key] = getNumericValue(formData[field.key]);
-      });
-    } catch (error) {
-      // Fallback to known fields
-      ['rent', 'pets', 'utilities', 'groceries', 'carInsurance', 'motoInsurance',
-       'gas', 'phone', 'carLoan', 'homeLoan', 'entertainment', 'diningOut',
-       'hobbies', 'shopping', 'travel', 'misc', 'miscNonEssential', 'subscriptions',
-       'carRegistration', 'homeInsurance', 'lifeInsurance', 'taxPreparation',
-       'vacations', 'gifts', 'homeImprovements'].forEach(field => {
-        expenseFields[field] = getNumericValue(formData[field]);
-      });
-    }
-
-    // Check if any expense field changed
-    const hasChanged = Object.keys(expenseFields).some(field =>
-      lastExpenseValues.current[field] !== expenseFields[field]
-    );
-
-    if (hasChanged) {
-      lastExpenseValues.current = expenseFields;
-      updateAnnualExpenses();
-    }
-  });
-
-  useEffect(() => {
-    calculateProjection();
-  }, [calculateProjection]);
-
+const FinancialCalculator = ({
+  formData,
+  results,
+  summary,
+  configError,
+  activeExpenseTab,
+  onInputChange,
+  onInputBlur,
+  onTabChange
+}) => {
   return (
     <div className="font-sans max-w-6xl mx-auto p-5 bg-gray-50 text-gray-800 min-h-screen">
       <div className="bg-white rounded-lg p-8 shadow-lg">
-        <h1 className="text-4xl font-bold text-center mb-8 bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-          ⚙️ Life Math 🔧
-        </h1>
-
         {configError && (
           <div className="bg-yellow-100 border border-yellow-300 rounded p-3 mb-4">
             <strong>Configuration Warning:</strong> {configError}. Using fallback values.
@@ -375,13 +26,13 @@ const FinancialCalculator = () => {
             if (configSource === 'example') {
               return (
                 <div className="bg-yellow-100 border border-yellow-300 rounded p-3 mb-4">
-                  <strong>ℹ️ Using Template Configuration:</strong> Copy <code className="bg-gray-200 px-1 rounded">calculator-config.example.json</code> to <code className="bg-gray-200 px-1 rounded">calculator-config.json</code> and customize your values.
+                  <strong>Using Template Configuration:</strong> Copy <code className="bg-gray-200 px-1 rounded">calculator-config.example.json</code> to <code className="bg-gray-200 px-1 rounded">calculator-config.json</code> and customize your values.
                 </div>
               );
             } else if (configSource === 'minimal') {
               return (
                 <div className="bg-yellow-100 border border-yellow-300 rounded p-3 mb-4">
-                  <strong>⚠️ Using Minimal Configuration:</strong> No config files found. All values set to zero. Please add a configuration file.
+                  <strong>Using Minimal Configuration:</strong> No config files found. All values set to zero. Please add a configuration file.
                 </div>
               );
             }
@@ -401,9 +52,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.currentAge}
-                onChange={(e) => handleInputChange('currentAge', e.target.value)}
-                onKeyUp={(e) => handleInputChange('currentAge', e.target.value)}
-                onBlur={(e) => handleInputBlur('currentAge', e.target.value)}
+                onChange={(e) => onInputChange('currentAge', e.target.value)}
+                onKeyUp={(e) => onInputChange('currentAge', e.target.value)}
+                onBlur={(e) => onInputBlur('currentAge', e.target.value)}
                 min="25" max="70"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -414,9 +65,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.endAge}
-                onChange={(e) => handleInputChange('endAge', e.target.value)}
-                onKeyUp={(e) => handleInputChange('endAge', e.target.value)}
-                onBlur={(e) => handleInputBlur('endAge', e.target.value)}
+                onChange={(e) => onInputChange('endAge', e.target.value)}
+                onKeyUp={(e) => onInputChange('endAge', e.target.value)}
+                onBlur={(e) => onInputBlur('endAge', e.target.value)}
                 min="45" max="75"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -427,9 +78,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.startingCareerHours}
-                onChange={(e) => handleInputChange('startingCareerHours', e.target.value)}
-                onKeyUp={(e) => handleInputChange('startingCareerHours', e.target.value)}
-                onBlur={(e) => handleInputBlur('startingCareerHours', e.target.value)}
+                onChange={(e) => onInputChange('startingCareerHours', e.target.value)}
+                onKeyUp={(e) => onInputChange('startingCareerHours', e.target.value)}
+                onBlur={(e) => onInputBlur('startingCareerHours', e.target.value)}
                 min="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -440,9 +91,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.annualHours}
-                onChange={(e) => handleInputChange('annualHours', e.target.value)}
-                onKeyUp={(e) => handleInputChange('annualHours', e.target.value)}
-                onBlur={(e) => handleInputBlur('annualHours', e.target.value)}
+                onChange={(e) => onInputChange('annualHours', e.target.value)}
+                onKeyUp={(e) => onInputChange('annualHours', e.target.value)}
+                onBlur={(e) => onInputBlur('annualHours', e.target.value)}
                 min="100" max="2080"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -453,9 +104,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.startingProfitSharing}
-                onChange={(e) => handleInputChange('startingProfitSharing', e.target.value)}
-                onKeyUp={(e) => handleInputChange('startingProfitSharing', e.target.value)}
-                onBlur={(e) => handleInputBlur('startingProfitSharing', e.target.value)}
+                onChange={(e) => onInputChange('startingProfitSharing', e.target.value)}
+                onKeyUp={(e) => onInputChange('startingProfitSharing', e.target.value)}
+                onBlur={(e) => onInputBlur('startingProfitSharing', e.target.value)}
                 min="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -466,9 +117,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.taxRate}
-                onChange={(e) => handleInputChange('taxRate', e.target.value)}
-                onKeyUp={(e) => handleInputChange('taxRate', e.target.value)}
-                onBlur={(e) => handleInputBlur('taxRate', e.target.value)}
+                onChange={(e) => onInputChange('taxRate', e.target.value)}
+                onKeyUp={(e) => onInputChange('taxRate', e.target.value)}
+                onBlur={(e) => onInputBlur('taxRate', e.target.value)}
                 step="1" min="10" max="40"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -479,9 +130,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.expenseInflation}
-                onChange={(e) => handleInputChange('expenseInflation', e.target.value)}
-                onKeyUp={(e) => handleInputChange('expenseInflation', e.target.value)}
-                onBlur={(e) => handleInputBlur('expenseInflation', e.target.value)}
+                onChange={(e) => onInputChange('expenseInflation', e.target.value)}
+                onKeyUp={(e) => onInputChange('expenseInflation', e.target.value)}
+                onBlur={(e) => onInputBlur('expenseInflation', e.target.value)}
                 step="0.1" min="0" max="10"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -498,9 +149,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.retirementBalance}
-                onChange={(e) => handleInputChange('retirementBalance', e.target.value)}
-                onKeyUp={(e) => handleInputChange('retirementBalance', e.target.value)}
-                onBlur={(e) => handleInputBlur('retirementBalance', e.target.value)}
+                onChange={(e) => onInputChange('retirementBalance', e.target.value)}
+                onKeyUp={(e) => onInputChange('retirementBalance', e.target.value)}
+                onBlur={(e) => onInputBlur('retirementBalance', e.target.value)}
                 min="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -511,9 +162,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.taxableBalance}
-                onChange={(e) => handleInputChange('taxableBalance', e.target.value)}
-                onKeyUp={(e) => handleInputChange('taxableBalance', e.target.value)}
-                onBlur={(e) => handleInputBlur('taxableBalance', e.target.value)}
+                onChange={(e) => onInputChange('taxableBalance', e.target.value)}
+                onKeyUp={(e) => onInputChange('taxableBalance', e.target.value)}
+                onBlur={(e) => onInputBlur('taxableBalance', e.target.value)}
                 min="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -524,9 +175,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.cashBalance}
-                onChange={(e) => handleInputChange('cashBalance', e.target.value)}
-                onKeyUp={(e) => handleInputChange('cashBalance', e.target.value)}
-                onBlur={(e) => handleInputBlur('cashBalance', e.target.value)}
+                onChange={(e) => onInputChange('cashBalance', e.target.value)}
+                onKeyUp={(e) => onInputChange('cashBalance', e.target.value)}
+                onBlur={(e) => onInputBlur('cashBalance', e.target.value)}
                 min="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -537,9 +188,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.investmentReturn}
-                onChange={(e) => handleInputChange('investmentReturn', e.target.value)}
-                onKeyUp={(e) => handleInputChange('investmentReturn', e.target.value)}
-                onBlur={(e) => handleInputBlur('investmentReturn', e.target.value)}
+                onChange={(e) => onInputChange('investmentReturn', e.target.value)}
+                onKeyUp={(e) => onInputChange('investmentReturn', e.target.value)}
+                onBlur={(e) => onInputBlur('investmentReturn', e.target.value)}
                 step="0.1" min="3" max="12"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -550,9 +201,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.cashReturn}
-                onChange={(e) => handleInputChange('cashReturn', e.target.value)}
-                onKeyUp={(e) => handleInputChange('cashReturn', e.target.value)}
-                onBlur={(e) => handleInputBlur('cashReturn', e.target.value)}
+                onChange={(e) => onInputChange('cashReturn', e.target.value)}
+                onKeyUp={(e) => onInputChange('cashReturn', e.target.value)}
+                onBlur={(e) => onInputBlur('cashReturn', e.target.value)}
                 step="0.01" min="0" max="8"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -579,9 +230,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.annualRaise}
-                onChange={(e) => handleInputChange('annualRaise', e.target.value)}
-                onKeyUp={(e) => handleInputChange('annualRaise', e.target.value)}
-                onBlur={(e) => handleInputBlur('annualRaise', e.target.value)}
+                onChange={(e) => onInputChange('annualRaise', e.target.value)}
+                onKeyUp={(e) => onInputChange('annualRaise', e.target.value)}
+                onBlur={(e) => onInputBlur('annualRaise', e.target.value)}
                 step="0.1" min="0" max="15"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -592,9 +243,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.profitSharingPercent}
-                onChange={(e) => handleInputChange('profitSharingPercent', e.target.value)}
-                onKeyUp={(e) => handleInputChange('profitSharingPercent', e.target.value)}
-                onBlur={(e) => handleInputBlur('profitSharingPercent', e.target.value)}
+                onChange={(e) => onInputChange('profitSharingPercent', e.target.value)}
+                onKeyUp={(e) => onInputChange('profitSharingPercent', e.target.value)}
+                onBlur={(e) => onInputBlur('profitSharingPercent', e.target.value)}
                 step="1" min="0" max="25"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -615,9 +266,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.otherIncome}
-                onChange={(e) => handleInputChange('otherIncome', e.target.value)}
-                onKeyUp={(e) => handleInputChange('otherIncome', e.target.value)}
-                onBlur={(e) => handleInputBlur('otherIncome', e.target.value)}
+                onChange={(e) => onInputChange('otherIncome', e.target.value)}
+                onKeyUp={(e) => onInputChange('otherIncome', e.target.value)}
+                onBlur={(e) => onInputBlur('otherIncome', e.target.value)}
                 min="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -628,9 +279,9 @@ const FinancialCalculator = () => {
               <input
                 type="number"
                 value={formData.partnerIncome}
-                onChange={(e) => handleInputChange('partnerIncome', e.target.value)}
-                onKeyUp={(e) => handleInputChange('partnerIncome', e.target.value)}
-                onBlur={(e) => handleInputBlur('partnerIncome', e.target.value)}
+                onChange={(e) => onInputChange('partnerIncome', e.target.value)}
+                onKeyUp={(e) => onInputChange('partnerIncome', e.target.value)}
+                onBlur={(e) => onInputBlur('partnerIncome', e.target.value)}
                 min="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-700"
               />
@@ -649,7 +300,7 @@ const FinancialCalculator = () => {
                   ? 'text-white bg-blue-500 shadow-md'
                   : 'text-gray-600 bg-transparent hover:text-blue-500 hover:bg-blue-50'
               }`}
-              onClick={() => setActiveExpenseTab('monthly')}
+              onClick={() => onTabChange('monthly')}
             >
               Monthly
             </button>
@@ -659,7 +310,7 @@ const FinancialCalculator = () => {
                   ? 'text-white bg-blue-500 shadow-md'
                   : 'text-gray-600 bg-transparent hover:text-blue-500 hover:bg-blue-50'
               }`}
-              onClick={() => setActiveExpenseTab('annual')}
+              onClick={() => onTabChange('annual')}
             >
               Annual
             </button>
@@ -669,7 +320,7 @@ const FinancialCalculator = () => {
                   ? 'text-white bg-blue-500 shadow-md'
                   : 'text-gray-600 bg-transparent hover:text-blue-500 hover:bg-blue-50'
               }`}
-              onClick={() => setActiveExpenseTab('overview')}
+              onClick={() => onTabChange('overview')}
             >
               Overview
             </button>
@@ -774,9 +425,9 @@ const FinancialCalculator = () => {
                                       <input
                                         type="number"
                                         value={formData[field.key] === '' ? '' : (formData[field.key] || 0)}
-                                        onChange={(e) => handleInputChange(field.key, e.target.value)}
-                                        onKeyUp={(e) => handleInputChange(field.key, e.target.value)}
-                                        onBlur={(e) => handleInputBlur(field.key, e.target.value)}
+                                        onChange={(e) => onInputChange(field.key, e.target.value)}
+                                        onKeyUp={(e) => onInputChange(field.key, e.target.value)}
+                                        onBlur={(e) => onInputBlur(field.key, e.target.value)}
                                         min="0"
                                         placeholder="0"
                                         className="flex-1 px-3 py-2 text-sm bg-transparent border-none focus:outline-none"
@@ -810,9 +461,9 @@ const FinancialCalculator = () => {
                             <input
                               type="number"
                               value={formData.rent || 0}
-                              onChange={(e) => handleInputChange('rent', e.target.value)}
-                              onKeyUp={(e) => handleInputChange('rent', e.target.value)}
-                              onBlur={(e) => handleInputBlur('rent', e.target.value)}
+                              onChange={(e) => onInputChange('rent', e.target.value)}
+                              onKeyUp={(e) => onInputChange('rent', e.target.value)}
+                              onBlur={(e) => onInputBlur('rent', e.target.value)}
                               min="0"
                               className="flex-1 px-3 py-2 text-sm bg-transparent border-none focus:outline-none"
                             />

@@ -1,10 +1,10 @@
-import FinancialCalculator from './components/FinancialCalculator'
+import Dashboard from './components/Dashboard'
 import './App.css'
 
 function App() {
   return (
     <div className="App">
-      <FinancialCalculator />
+      <Dashboard />
     </div>
   )
 }
