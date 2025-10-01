@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const Navbar = ({ onDashboardClick }) => {
+const Navbar = ({ onDashboardClick, onAuthClick }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
@@ -24,10 +24,16 @@ const Navbar = ({ onDashboardClick }) => {
 
           {/* Right side - Login and Signup */}
           <div className="hidden md:flex items-center space-x-4">
-            <button className="hover:bg-green-700 px-3 py-2 rounded-md text-sm font-medium transition-colors">
+            <button
+              onClick={onAuthClick}
+              className="hover:bg-green-700 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+            >
               Login
             </button>
-            <button className="bg-white text-green-600 hover:bg-gray-100 px-4 py-2 rounded-md text-sm font-medium transition-colors">
+            <button
+              onClick={onAuthClick}
+              className="bg-white text-green-600 hover:bg-gray-100 px-4 py-2 rounded-md text-sm font-medium transition-colors"
+            >
               Sign Up
             </button>
           </div>
@@ -78,10 +84,22 @@ const Navbar = ({ onDashboardClick }) => {
             >
               Dashboard
             </button>
-            <button className="block w-full text-left hover:bg-green-700 px-3 py-2 rounded-md text-base font-medium">
+            <button
+              onClick={() => {
+                onAuthClick();
+                setIsMenuOpen(false);
+              }}
+              className="block w-full text-left hover:bg-green-700 px-3 py-2 rounded-md text-base font-medium"
+            >
               Login
             </button>
-            <button className="block w-full text-left bg-white text-green-600 hover:bg-gray-100 px-3 py-2 rounded-md text-base font-medium">
+            <button
+              onClick={() => {
+                onAuthClick();
+                setIsMenuOpen(false);
+              }}
+              className="block w-full text-left bg-white text-green-600 hover:bg-gray-100 px-3 py-2 rounded-md text-base font-medium"
+            >
               Sign Up
             </button>
           </div>

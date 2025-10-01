@@ -28,6 +28,7 @@
             "rent": { "label": "Rent", "default": 1760 },
             "pets": { "label": "Pets", "default": 300 },
             "subscriptions": { "label": "Subscriptions", "default": 56 },
+            "healthInsurance": {"label": "Health Insurance", "default": 550},
             "carInsurance": { "label": "Car Insurance", "default": 135 },
             "motoInsurance": { "label": "Moto Insurance", "default": 40 },
             "groceries": { "label": "Groceries", "default": 860 },

@@ -132,6 +132,7 @@ Desktop.ini
 *.temp
 temp/
 tmp/
+nul
 
 # Test files
 /test-results/
